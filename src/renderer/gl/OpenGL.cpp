@@ -677,8 +677,8 @@ void COpenGLRenderer::endRendering() {
     m_currentRBO->unbind();
     m_currentRBO.reset();
 
-    // FIXME: explicit sync for nvidia!!!!
-    glFlush();
+    if (!explicitSyncSupported())
+        glFlush();
 
     m_window->m_damageRing.rotate();
     m_window.reset();
@@ -1061,7 +1061,6 @@ void COpenGLRenderer::renderLine(const SLineRenderData& data) {
         return;
 
     // generate a polygon
-    // FIXME: inconsistent size on x/y, why?
 
     std::vector<Vector2D> polyPoints;
     polyPoints.resize((data.points.size() * 4) - 2);
@@ -1079,8 +1078,8 @@ void COpenGLRenderer::renderLine(const SLineRenderData& data) {
         dir = dir / dir.size();
 
         // rotate by 90 deg left and right
-        const auto V1              = Vector2D{-dir.y, dir.x} * data.thick / ROUNDEDBOX.size();
-        const auto V2              = Vector2D{dir.y, -dir.x} * data.thick / ROUNDEDBOX.size();
+        const auto V1              = Vector2D{-dir.y * data.thick / ROUNDEDBOX.w, dir.x * data.thick / ROUNDEDBOX.h};
+        const auto V2              = Vector2D{dir.y * data.thick / ROUNDEDBOX.w, -dir.x * data.thick / ROUNDEDBOX.h};
         polyPoints.at(i * 4)       = data.points.at(i) + V1;
         polyPoints.at(1 + (i * 4)) = data.points.at(i) + V2;
 

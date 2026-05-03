@@ -19,8 +19,6 @@ namespace Hyprtoolkit::Asset {
         CAssetCache(CAssetCache&)       = delete;
         CAssetCache(CAssetCache&&)      = delete;
 
-        // svg / icon entries are keyed per-resolution by the caller (see
-        // CImageElement::getCacheString), so a flat string match here is enough.
         SP<CAssetCacheEntry> get(const std::string_view& source);
         void                 cache(SP<CAssetCacheEntry> entry);
 

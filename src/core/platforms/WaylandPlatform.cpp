@@ -245,19 +245,21 @@ void CWaylandPlatform::initIM() {
         if (!m_currentWindow || !m_currentWindow->m_keyboardFocus)
             return;
 
-        // FIXME: this is incomplete. Very incomplete, but works for CJK IMEs just fine.
+        auto* focus = m_currentWindow->m_keyboardFocus.get();
 
-        const auto NEW_STR = m_waylandState.imState.commitString;
+        if (m_waylandState.imState.deleteBefore || m_waylandState.imState.deleteAfter)
+            focus->imDeleteSurrounding(m_waylandState.imState.deleteBefore, m_waylandState.imState.deleteAfter);
 
-        if (NEW_STR.empty()) {
-            m_currentWindow->m_keyboardFocus->imCommitNewText(m_waylandState.imState.preeditString);
-            return;
-        }
-
+        const auto commitStr  = std::move(m_waylandState.imState.commitString);
+        const auto preeditStr = std::move(m_waylandState.imState.preeditString);
         m_waylandState.imState = {};
 
-        m_currentWindow->m_keyboardFocus->imCommitNewText(NEW_STR);
-        m_currentWindow->m_keyboardFocus->imApplyText();
+        if (!commitStr.empty()) {
+            focus->imCommitNewText(commitStr);
+            focus->imApplyText();
+        }
+
+        focus->imCommitNewText(preeditStr);
     });
 }
 

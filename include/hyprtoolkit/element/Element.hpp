@@ -90,6 +90,7 @@ namespace Hyprtoolkit {
         virtual bool                                     alwaysGetMouseInput();
         virtual void                                     imCommitNewText(const std::string& text);
         virtual void                                     imApplyText();
+        virtual void                                     imDeleteSurrounding(size_t before, size_t after);
 
         virtual void                                     recheckColor();
         virtual bool                                     positioningDependsOnChild();
