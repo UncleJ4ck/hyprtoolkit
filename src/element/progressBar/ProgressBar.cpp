@@ -3,6 +3,7 @@
 #include <hyprtoolkit/palette/Palette.hpp>
 #include <algorithm>
 
+#include "../../core/AnimationManager.hpp"
 #include "../../core/InternalBackend.hpp"
 #include "../../layout/Positioner.hpp"
 #include "../../window/ToolkitWindow.hpp"
@@ -10,6 +11,7 @@
 
 using namespace Hyprtoolkit;
 using namespace Hyprutils::Math;
+using namespace Hyprutils::Animation;
 
 SP<CProgressBarElement> CProgressBarElement::create(const SProgressBarData& data) {
     auto p          = SP<CProgressBarElement>(new CProgressBarElement(data));
@@ -31,7 +33,7 @@ CProgressBarElement::CProgressBarElement(const SProgressBarData& data) : IElemen
 
     m_impl->background->setPositionMode(HT_POSITION_ABSOLUTE);
 
-    const float W = std::clamp(m_impl->data.value, 0.F, 1.F);
+    const float W = m_impl->data.indeterminate ? PROGRESSBAR_PULSE_WIDTH : std::clamp(m_impl->data.value, 0.F, 1.F);
 
     m_impl->foreground = CRectangleBuilder::begin()
                              ->color([] { return g_palette->m_colors.accent; })
@@ -43,11 +45,54 @@ CProgressBarElement::CProgressBarElement(const SProgressBarData& data) : IElemen
     addChild(m_impl->background);
 
     impl->grouped = true;
+
+    if (m_impl->data.indeterminate)
+        m_impl->startIndeterminate();
 }
 
 void SProgressBarImpl::applyValue() {
     const float W = std::clamp(data.value, 0.F, 1.F);
     foreground->rebuild()->size({CDynamicSize::HT_SIZE_PERCENT, CDynamicSize::HT_SIZE_PERCENT, {W, 1.F}})->commence();
+}
+
+void SProgressBarImpl::startIndeterminate() {
+    if (phase)
+        return;
+
+    g_animationManager->createAnimation(0.F, phase, g_animationManager->m_animationTree.getConfig("indeterminate"));
+
+    phase->setUpdateCallback([this](WP<CBaseAnimatedVariable>) { onPulseTick(); });
+    phase->setCallbackOnEnd(
+        [this](WP<CBaseAnimatedVariable>) {
+            phase->setValueAndWarp(0.F);
+            *phase = 1.F;
+        },
+        false);
+
+    *phase = 1.F;
+}
+
+void SProgressBarImpl::stopIndeterminate() {
+    if (!phase)
+        return;
+    phase->resetAllCallbacks();
+    phase.reset();
+
+    foreground->rebuild()
+        ->size({CDynamicSize::HT_SIZE_PERCENT, CDynamicSize::HT_SIZE_PERCENT, {std::clamp(data.value, 0.F, 1.F), 1.F}})
+        ->commence();
+
+    foreground->setAbsolutePosition({0, 0});
+}
+
+void SProgressBarImpl::onPulseTick() {
+    const float bgW = background->size().x;
+    if (bgW <= 0.F)
+        return;
+    const float pulseW = bgW * PROGRESSBAR_PULSE_WIDTH;
+    const float t      = phase->value();
+    const float x      = t * (bgW + pulseW) - pulseW;
+    foreground->setAbsolutePosition({x, 0.0});
 }
 
 void CProgressBarElement::paint() {
@@ -69,10 +114,16 @@ SP<CProgressBarBuilder> CProgressBarElement::rebuild() {
 
 void CProgressBarElement::replaceData(const SProgressBarData& data) {
     const bool VALUE_CHANGED = data.value != m_impl->data.value;
+    const bool INDET_CHANGED = data.indeterminate != m_impl->data.indeterminate;
 
     m_impl->data = data;
 
-    if (VALUE_CHANGED)
+    if (INDET_CHANGED) {
+        if (m_impl->data.indeterminate)
+            m_impl->startIndeterminate();
+        else
+            m_impl->stopIndeterminate();
+    } else if (VALUE_CHANGED && !m_impl->data.indeterminate)
         m_impl->applyValue();
 
     if (impl->window)
