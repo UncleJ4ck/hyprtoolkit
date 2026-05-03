@@ -5,10 +5,6 @@
 
 using namespace Hyprtoolkit;
 
-CGLTexture::CGLTexture() {
-    ;
-}
-
 void CGLTexture::attachAsync(WP<CGLTexture> self, ASP<Hyprgraphics::IAsyncResource> resource) {
     if (resource->m_ready) {
         m_resource = resource;
