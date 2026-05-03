@@ -45,11 +45,10 @@ void SRadioGroupImpl::buildRows() {
                          ->size(CDynamicSize{CDynamicSize::HT_SIZE_ABSOLUTE, CDynamicSize::HT_SIZE_ABSOLUTE, {DOT_OUTER, DOT_OUTER}})
                          ->commence();
 
-        CHyprColor col = g_palette->m_colors.accent;
-        col.a          = (sc<int>(i) == data.selected) ? 1.F : 0.F;
+        const bool SEL = sc<int>(i) == data.selected;
 
         auto inner = CRectangleBuilder::begin()
-                         ->color([col] { return col; })
+                         ->color([SEL] { auto c = g_palette->m_colors.accent; c.a = SEL ? 1.F : 0.F; return c; })
                          ->rounding(sc<int>(DOT_INNER))
                          ->size(CDynamicSize{CDynamicSize::HT_SIZE_ABSOLUTE, CDynamicSize::HT_SIZE_ABSOLUTE, {DOT_INNER, DOT_INNER}})
                          ->commence();
@@ -77,16 +76,13 @@ void SRadioGroupImpl::buildRows() {
 
         layout->addChild(row);
     }
-
-    lastSelected = data.selected;
 }
 
 void SRadioGroupImpl::applyDotAt(int idx, bool selected) {
     if (idx < 0 || idx >= sc<int>(dots.size()))
         return;
-    CHyprColor col = g_palette->m_colors.accent;
-    col.a          = selected ? 1.F : 0.F;
-    dots[idx]->rebuild()->color([col] { return col; })->commence();
+    const bool s = selected;
+    dots[idx]->rebuild()->color([s] { auto c = g_palette->m_colors.accent; c.a = s ? 1.F : 0.F; return c; })->commence();
 }
 
 void SRadioGroupImpl::select(int idx) {
@@ -97,7 +93,6 @@ void SRadioGroupImpl::select(int idx) {
     data.selected  = idx;
     applyDotAt(prev, false);
     applyDotAt(idx, true);
-    lastSelected = idx;
 
     if (data.onSelected)
         data.onSelected(self.lock(), idx);
@@ -134,7 +129,6 @@ void CRadioGroupElement::replaceData(const SRadioGroupData& data) {
     } else if (SEL_CHANGED) {
         m_impl->applyDotAt(prevSelected, false);
         m_impl->applyDotAt(m_impl->data.selected, true);
-        m_impl->lastSelected = m_impl->data.selected;
     }
 
     if (impl->window)
