@@ -11,7 +11,7 @@
 
 using namespace Hyprtoolkit;
 using namespace Hyprutils::Math;
-using namespace Hyprutils::Animation;
+using CBAV = Hyprutils::Animation::CBaseAnimatedVariable;
 
 SP<CProgressBarElement> CProgressBarElement::create(const SProgressBarData& data) {
     auto p          = SP<CProgressBarElement>(new CProgressBarElement(data));
@@ -59,11 +59,13 @@ void SProgressBarImpl::startIndeterminate() {
     if (phase)
         return;
 
+    foreground->setPositionMode(IElement::HT_POSITION_ABSOLUTE);
+
     g_animationManager->createAnimation(0.F, phase, g_animationManager->m_animationTree.getConfig("indeterminate"));
 
-    phase->setUpdateCallback([this](WP<CBaseAnimatedVariable>) { onPulseTick(); });
+    phase->setUpdateCallback([this](WP<CBAV>) { onPulseTick(); });
     phase->setCallbackOnEnd(
-        [this](WP<CBaseAnimatedVariable>) {
+        [this](WP<CBAV>) {
             phase->setValueAndWarp(0.F);
             *phase = 1.F;
         },
@@ -78,11 +80,10 @@ void SProgressBarImpl::stopIndeterminate() {
     phase->resetAllCallbacks();
     phase.reset();
 
+    foreground->setPositionMode(IElement::HT_POSITION_AUTO);
     foreground->rebuild()
         ->size({CDynamicSize::HT_SIZE_PERCENT, CDynamicSize::HT_SIZE_PERCENT, {std::clamp(data.value, 0.F, 1.F), 1.F}})
         ->commence();
-
-    foreground->setAbsolutePosition({0, 0});
 }
 
 void SProgressBarImpl::onPulseTick() {
