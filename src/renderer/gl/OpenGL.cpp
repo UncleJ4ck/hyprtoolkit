@@ -501,21 +501,21 @@ void COpenGLRenderer::initGLResources() {
     m_borderShader.alpha                 = glGetUniformLocation(prog, "alpha");
     m_borderShader.roundingPower         = glGetUniformLocation(prog, "roundingPower");
 
-    const auto TRANSFRAGSRC = processShader("transition.frag", includes);
-    prog                                 = createProgram(VERTSRC, TRANSFRAGSRC);
-    m_transitionShader.program           = prog;
-    m_transitionShader.proj              = glGetUniformLocation(prog, "proj");
-    m_transitionShader.tex               = glGetUniformLocation(prog, "tex1");
-    m_transitionShader.tex2              = glGetUniformLocation(prog, "tex2");
-    m_transitionShader.progress          = glGetUniformLocation(prog, "progress");
-    m_transitionShader.alpha             = glGetUniformLocation(prog, "alpha");
-    m_transitionShader.posAttrib         = glGetAttribLocation(prog, "pos");
-    m_transitionShader.texAttrib         = glGetAttribLocation(prog, "texcoord");
-    m_transitionShader.topLeft           = glGetUniformLocation(prog, "topLeft");
-    m_transitionShader.fullSize          = glGetUniformLocation(prog, "fullSize");
-    m_transitionShader.radius            = glGetUniformLocation(prog, "radius");
-    m_transitionShader.uDuration         = glGetUniformLocation(prog, "u_duration");
-    m_transitionShader.randomPixel       = glGetUniformLocation(prog, "randomPixel");
+    const auto TRANSFRAGSRC        = processShader("transition.frag", includes);
+    prog                           = createProgram(VERTSRC, TRANSFRAGSRC);
+    m_transitionShader.program     = prog;
+    m_transitionShader.proj        = glGetUniformLocation(prog, "proj");
+    m_transitionShader.tex         = glGetUniformLocation(prog, "tex1");
+    m_transitionShader.tex2        = glGetUniformLocation(prog, "tex2");
+    m_transitionShader.progress    = glGetUniformLocation(prog, "progress");
+    m_transitionShader.alpha       = glGetUniformLocation(prog, "alpha");
+    m_transitionShader.posAttrib   = glGetAttribLocation(prog, "pos");
+    m_transitionShader.texAttrib   = glGetAttribLocation(prog, "texcoord");
+    m_transitionShader.topLeft     = glGetUniformLocation(prog, "topLeft");
+    m_transitionShader.fullSize    = glGetUniformLocation(prog, "fullSize");
+    m_transitionShader.radius      = glGetUniformLocation(prog, "radius");
+    m_transitionShader.uDuration   = glGetUniformLocation(prog, "u_duration");
+    m_transitionShader.randomPixel = glGetUniformLocation(prog, "randomPixel");
 
     glGenVertexArrays(1, &m_vao);
     glGenBuffers(1, &m_vbo);
@@ -1217,14 +1217,14 @@ void COpenGLRenderer::renderTexture(const STextureRenderData& data) {
     // Otherwise a per-call fit mode overrides the texture's stored mode.
     const eImageFitMode fit = tex->m_fitApplied ? IMAGE_FIT_MODE_STRETCH : data.fitMode.value_or(data.texture->fitMode());
 
-    const auto     SOURCE_LAYOUT = fit == IMAGE_FIT_MODE_CONTAIN ? containImage(data.box, tex->m_size) : data.box;
-    const auto     SOURCE_BOX    = presentationBox(SOURCE_LAYOUT);
-    const auto     ROUNDEDBOX    = logicalToGL(SOURCE_BOX);
-    const auto     UNTRANSFORMED = logicalToGL(SOURCE_BOX, false);
-    Mat3x3         matrix        = m_projMatrix.projectBox(ROUNDEDBOX, Hyprutils::Math::HYPRUTILS_TRANSFORM_FLIPPED_180, SOURCE_BOX.rot);
-    Mat3x3         glMatrix      = m_projection.copy().multiply(matrix);
+    const auto          SOURCE_LAYOUT = fit == IMAGE_FIT_MODE_CONTAIN ? containImage(data.box, tex->m_size) : data.box;
+    const auto          SOURCE_BOX    = presentationBox(SOURCE_LAYOUT);
+    const auto          ROUNDEDBOX    = logicalToGL(SOURCE_BOX);
+    const auto          UNTRANSFORMED = logicalToGL(SOURCE_BOX, false);
+    Mat3x3              matrix        = m_projMatrix.projectBox(ROUNDEDBOX, Hyprutils::Math::HYPRUTILS_TRANSFORM_FLIPPED_180, SOURCE_BOX.rot);
+    Mat3x3              glMatrix      = m_projection.copy().multiply(matrix);
 
-    const auto     DAMAGE = damageWithClip();
+    const auto          DAMAGE = damageWithClip();
 
     if (DAMAGE.copy().intersect(UNTRANSFORMED).empty())
         return;
@@ -1505,7 +1505,7 @@ SP<IRendererTexture> COpenGLRenderer::captureTransitionState(const STransitionRe
     glUseProgram(activeShader->program);
 
     // Project a box covering the full FBO into 0..1 vertices.
-    CBox captureBox{0, 0, (float)w, (float)h};
+    CBox   captureBox{0, 0, (float)w, (float)h};
     Mat3x3 captureProj = Mat3x3::outputProjection(Vector2D{w, h}, HYPRUTILS_TRANSFORM_FLIPPED_180);
     Mat3x3 captureMat  = captureProj.projectBox(captureBox, HYPRUTILS_TRANSFORM_FLIPPED_180, 0);
 
@@ -1530,7 +1530,7 @@ SP<IRendererTexture> COpenGLRenderer::captureTransitionState(const STransitionRe
     if (activeShader->uDuration >= 0)
         glUniform1f(activeShader->uDuration, data.duration);
 
-    GLfloat fullVerts[] = { 0, 0, 1, 0, 0, 1, 1, 1 };
+    GLfloat               fullVerts[] = {0, 0, 1, 0, 0, 1, 1, 1};
     std::array<float, 16> vertices;
     std::ranges::copy(fullVerts, vertices.begin());
     std::ranges::copy(fullVerts, vertices.begin() + 8);
@@ -1617,8 +1617,8 @@ SP<IRendererTexture> COpenGLRenderer::renderFitFrame(const SP<IRendererTexture>&
     glGetIntegerv(GL_VIEWPORT, prevViewport);
     GLint prevFb = 0;
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFb);
-    GLboolean prevScissor = glIsEnabled(GL_SCISSOR_TEST);
-    GLboolean prevBlend   = glIsEnabled(GL_BLEND);
+    GLboolean prevScissor   = glIsEnabled(GL_SCISSOR_TEST);
+    GLboolean prevBlend     = glIsEnabled(GL_BLEND);
     GLint     prevActiveTex = 0;
     glGetIntegerv(GL_ACTIVE_TEXTURE, &prevActiveTex);
 
@@ -1652,11 +1652,9 @@ SP<IRendererTexture> COpenGLRenderer::renderFitFrame(const SP<IRendererTexture>&
 
     // Project the (possibly contain-shrunk) box into the full FBO. The box is in
     // FBO-pixel units so it matches outputProjection's {w,h} size.
-    const CBox srcBox = fitMode == IMAGE_FIT_MODE_CONTAIN
-        ? containImage(CBox{0, 0, (float)w, (float)h}, tex->m_size)
-        : CBox{0, 0, (float)w, (float)h};
-    Mat3x3 outProj = Mat3x3::outputProjection(Vector2D{w, h}, HYPRUTILS_TRANSFORM_FLIPPED_180);
-    Mat3x3 drawMat = outProj.projectBox(srcBox, HYPRUTILS_TRANSFORM_FLIPPED_180, 0);
+    const CBox srcBox  = fitMode == IMAGE_FIT_MODE_CONTAIN ? containImage(CBox{0, 0, (float)w, (float)h}, tex->m_size) : CBox{0, 0, (float)w, (float)h};
+    Mat3x3     outProj = Mat3x3::outputProjection(Vector2D{w, h}, HYPRUTILS_TRANSFORM_FLIPPED_180);
+    Mat3x3     drawMat = outProj.projectBox(srcBox, HYPRUTILS_TRANSFORM_FLIPPED_180, 0);
     glUniformMatrix3fv(shader->proj, 1, GL_TRUE, drawMat.getMatrix().data());
     glUniform1f(shader->alpha, 1.F);
 

@@ -55,9 +55,9 @@ class CShader {
     GLint   wl_output = -1;
 
     // Transition shader
-    GLint   progress = -1;
-    GLint   uDuration   = -1;  // uniform u_duration (host-passed)
-    GLint   randomPixel = -1;
+    GLint progress    = -1;
+    GLint uDuration   = -1; // uniform u_duration (host-passed)
+    GLint randomPixel = -1;
 
     // Blur prepare
     GLint contrast = -1;

@@ -51,12 +51,12 @@ namespace Hyprtoolkit {
 
         // True when this texture is already a fit-resolved full-screen frame;
         // renderFitFrame returns it unchanged so it is never fit-transformed twice.
-        bool                              m_fitApplied = false;
+        bool m_fitApplied = false;
 
-        void                              upload();
-        void                              uploadOnContext(WP<CGLTexture> self);
-        void                              releaseFromRenderer();
-        void                              allocate();
-        void                              bind();
+        void upload();
+        void uploadOnContext(WP<CGLTexture> self);
+        void releaseFromRenderer();
+        void allocate();
+        void bind();
     };
 };

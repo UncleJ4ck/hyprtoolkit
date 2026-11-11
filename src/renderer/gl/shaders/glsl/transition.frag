@@ -4,10 +4,10 @@ precision highp float;
 
 in vec2 v_texcoord;
 
-uniform sampler2D tex1;      // Start frame (fit pre-resolved in C++ via renderFitFrame)
-uniform sampler2D tex2;      // End frame (fit pre-resolved in C++)
-uniform float progress;      // 0.0 = fully start, 1.0 = fully end
-uniform float alpha;         // Overall opacity
+uniform sampler2D tex1;
+uniform sampler2D tex2;
+uniform float progress;
+uniform float alpha;
 
 layout(location = 0) out vec4 fragColor;
 

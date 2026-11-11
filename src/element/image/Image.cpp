@@ -184,7 +184,7 @@ void SImageImpl::postImageLoad(const SP<SImageLoadRequest>& request) {
         cacheEntry = request->cacheEntry;
         failed     = !loaded;
         if (loaded) {
-            size           = request->resource->m_asset.pixelSize;
+            size = request->resource->m_asset.pixelSize;
             oldCacheEntry.reset(); // only on success: on failure keep it as the visible fallback
         }
     }
@@ -310,26 +310,22 @@ Vector2D SImageImpl::preferredSvgSize() {
     return Vector2D{max * lastScale, max * lastScale}.round();
 }
 
-void CImageElement::transitionTo(const std::string& path,
-                                  eImageFitMode fitMode,
-                                  float duration,
-                                  const std::string& shaderSource) {
-    // New transition: drop the previous transition's cached fit-resolved FBOs.
+void CImageElement::transitionTo(const std::string& path, eImageFitMode fitMode, float duration, const std::string& shaderSource) {
     g_renderer->clearTransitionCache();
 
     if (m_impl->transition.active) {
         // Capture the in-flight blend to an FBO and use it as the new start texture.
         if (m_impl->transition.startTexture && m_impl->transition.endTexture) {
             IRenderer::STransitionRenderData captureData = {
-                .box = impl->position,
+                .box          = impl->position,
                 .startTexture = m_impl->transition.startTexture,
-                .endTexture = m_impl->transition.endTexture,
-                .progress = m_impl->transition.progress,
-                .a = 1.F,
-                .fitMode = m_impl->data.fitMode,
-                .shaderKey = m_impl->transition.shaderKey,
-                .randomPixel = m_impl->transition.randomPixel,
-                .duration = m_impl->transition.duration,
+                .endTexture   = m_impl->transition.endTexture,
+                .progress     = m_impl->transition.progress,
+                .a            = 1.F,
+                .fitMode      = m_impl->data.fitMode,
+                .shaderKey    = m_impl->transition.shaderKey,
+                .randomPixel  = m_impl->transition.randomPixel,
+                .duration     = m_impl->transition.duration,
             };
 
             auto capturedTex = g_renderer->captureTransitionState(captureData);
@@ -344,26 +340,22 @@ void CImageElement::transitionTo(const std::string& path,
         m_impl->transition.startTexture = g_renderer->renderFitFrame(m_impl->cacheEntry->tex(), impl->position, m_impl->data.fitMode);
     }
 
-    m_impl->transition.active     = true;
-    m_impl->transition.progress   = 0.0f;
-    m_impl->transition.shaderKey  = g_renderer->ensureTransitionShader(shaderSource);
-    m_impl->transition.startTime  = std::chrono::steady_clock::now();
+    m_impl->transition.active    = true;
+    m_impl->transition.progress  = 0.0f;
+    m_impl->transition.shaderKey = g_renderer->ensureTransitionShader(shaderSource);
+    m_impl->transition.startTime = std::chrono::steady_clock::now();
 
-    m_impl->transition.randomPixel = Hyprutils::Math::Vector2D(
-        static_cast<float>(rand() % 1000) / 1000.0f,
-        static_cast<float>(rand() % 1000) / 1000.0f
-    );
+    m_impl->transition.randomPixel = Hyprutils::Math::Vector2D(static_cast<float>(rand() % 1000) / 1000.0f, static_cast<float>(rand() % 1000) / 1000.0f);
 
     // GLES cannot initialize uniform values, so u_duration is pushed to the shader
     // each frame; a shader may further remap progress via a local const.
     // duration <= 0 means an immediate (non-animated) swap.
     m_impl->transition.duration = std::max(0.0f, duration);
 
-    // Populated once the new asset finishes loading.
     m_impl->transition.endTexture.reset();
 
     m_impl->requestedGen++;
-    m_impl->data.path     = path;
+    m_impl->data.path    = path;
     m_impl->data.fitMode = fitMode;
     renderTex();
 
@@ -375,19 +367,15 @@ bool CImageElement::isTransitioning() const {
     return m_impl->transition.active;
 }
 
-float CImageElement::getTransitionProgressOut() const {
-    return m_impl->transition.progress;
-}
-
-float CImageElement::getTransitionProgressIn() const {
+float CImageElement::getTransitionProgress() const {
     return m_impl->transition.progress;
 }
 
 void CImageElement::renderTransition() {
     auto& trans = m_impl->transition;
 
-    auto  now     = std::chrono::steady_clock::now();
-    float elapsed = std::chrono::duration<float>(now - trans.startTime).count();
+    auto  now      = std::chrono::steady_clock::now();
+    float elapsed  = std::chrono::duration<float>(now - trans.startTime).count();
     trans.progress = (trans.duration > 0.0f) ? std::clamp(elapsed / trans.duration, 0.0f, 1.0f) : 1.0f;
 
     const bool targetReady  = m_impl->cacheEntry && m_impl->cacheEntry->tex();
@@ -395,17 +383,16 @@ void CImageElement::renderTransition() {
 
     if (trans.progress >= 1.0f) {
         if (targetReady) {
-            // Normal completion.
             trans.active = false;
             trans.startTexture.reset();
             trans.endTexture.reset();
             g_renderer->clearTransitionCache();
             g_renderer->renderTexture({
-                .box = impl->position,
-                .texture = m_impl->cacheEntry->tex(),
-                .a = 1.F,
+                .box      = impl->position,
+                .texture  = m_impl->cacheEntry->tex(),
+                .a        = 1.F,
                 .rounding = 0,
-                .fitMode = m_impl->data.fitMode,
+                .fitMode  = m_impl->data.fitMode,
             });
             return;
         }
@@ -417,9 +404,9 @@ void CImageElement::renderTransition() {
             g_renderer->clearTransitionCache();
             if (trans.startTexture)
                 g_renderer->renderTexture({
-                    .box = impl->position,
-                    .texture = trans.startTexture,
-                    .a = 1.F,
+                    .box      = impl->position,
+                    .texture  = trans.startTexture,
+                    .a        = 1.F,
                     .rounding = 0,
                 });
             trans.startTexture.reset();
@@ -431,41 +418,40 @@ void CImageElement::renderTransition() {
         // postImageScheduleRecalc() damages on load completion.
         if (trans.startTexture)
             g_renderer->renderTexture({
-                .box = impl->position,
-                .texture = trans.startTexture,
-                .a = 1.F,
+                .box      = impl->position,
+                .texture  = trans.startTexture,
+                .a        = 1.F,
                 .rounding = 0,
             });
         return; // no scheduleReposition -> no busy-repaint while waiting
     }
 
-    // The end texture is resolved once the new asset finishes loading.
     SP<IRendererTexture> endTex;
     if (m_impl->cacheEntry && m_impl->cacheEntry->tex()) {
-        endTex = m_impl->cacheEntry->tex();
+        endTex           = m_impl->cacheEntry->tex();
         trans.endTexture = endTex;
     } else
         endTex = trans.endTexture;
 
     if (trans.startTexture && endTex) {
         g_renderer->renderTransition({
-            .box = impl->position,
+            .box          = impl->position,
             .startTexture = trans.startTexture,
-            .endTexture = endTex,
-            .progress = trans.progress,
-            .a = 1.F,
-            .rounding = 0,
-            .fitMode = m_impl->data.fitMode,
-            .shaderKey = trans.shaderKey,
-            .randomPixel = trans.randomPixel,
-            .duration = trans.duration,
+            .endTexture   = endTex,
+            .progress     = trans.progress,
+            .a            = 1.F,
+            .rounding     = 0,
+            .fitMode      = m_impl->data.fitMode,
+            .shaderKey    = trans.shaderKey,
+            .randomPixel  = trans.randomPixel,
+            .duration     = trans.duration,
         });
     } else if (trans.startTexture) {
         // End texture not loaded yet, keep showing the start.
         g_renderer->renderTexture({
-            .box = impl->position,
-            .texture = trans.startTexture,
-            .a = 1.F,
+            .box      = impl->position,
+            .texture  = trans.startTexture,
+            .a        = 1.F,
             .rounding = 0,
         });
     }

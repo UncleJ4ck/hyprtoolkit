@@ -62,15 +62,11 @@ namespace Hyprtoolkit {
         // randomPixel, u_duration. A shader that fails to compile/link, or that is
         // missing any of pos/texcoord/proj/tex1/tex2/progress, is rejected and the
         // default transition shader is used instead.
-        void transitionTo(const std::string& path,
-                          eImageFitMode fitMode,
-                          float duration,
-                          const std::string& shaderSource = "");
+        void  transitionTo(const std::string& path, eImageFitMode fitMode, float duration, const std::string& shaderSource = "");
 
-        bool isTransitioning() const;
+        bool  isTransitioning() const;
 
-        float getTransitionProgressOut() const;
-        float getTransitionProgressIn() const;
+        float getTransitionProgress() const;
 
       private:
         CImageElement(const SImageData& data);
@@ -79,7 +75,7 @@ namespace Hyprtoolkit {
         // NOTE: calling replaceData() while a transitionTo()-driven transition is
         // active is not a supported interleaving: replaceData bumps the request
         // generation and updates the data, but does not touch transition state.
-        void                                                    replaceData(const SImageData& data);
+        void replaceData(const SImageData& data);
 
         //
         virtual void                                     paint();

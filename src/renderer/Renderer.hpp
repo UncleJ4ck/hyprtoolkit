@@ -69,16 +69,16 @@ namespace Hyprtoolkit {
         };
 
         struct STransitionRenderData {
-            CBox                                 box;
-            SP<IRendererTexture>                 startTexture;
-            SP<IRendererTexture>                 endTexture;
-            float                                progress = 0.0f;
-            float                                a = 1.F;
-            int                                  rounding = 0;
-            eImageFitMode                        fitMode = IMAGE_FIT_MODE_COVER;
-            size_t                               shaderKey = 0;
-            Vector2D                             randomPixel;
-            float                                duration = 0.0f;  // passed to shader via u_duration
+            CBox                 box;
+            SP<IRendererTexture> startTexture;
+            SP<IRendererTexture> endTexture;
+            float                progress  = 0.0f;
+            float                a         = 1.F;
+            int                  rounding  = 0;
+            eImageFitMode        fitMode   = IMAGE_FIT_MODE_COVER;
+            size_t               shaderKey = 0;
+            Vector2D             randomPixel;
+            float                duration = 0.0f; // passed to shader via u_duration
         };
 
         virtual void                 beginRendering(SP<IToolkitWindow> window, SP<Aquamarine::IBuffer> buf) = 0;
@@ -88,19 +88,17 @@ namespace Hyprtoolkit {
         virtual void                 renderRectangle(const SRectangleRenderData& data)                      = 0;
         virtual SP<IRendererTexture> uploadTexture(const STextureData& data)                                = 0;
         virtual void                 renderTexture(const STextureRenderData& data)                          = 0;
-        virtual void                 renderTransition(const STransitionRenderData& data)                      = 0;
+        virtual void                 renderTransition(const STransitionRenderData& data)                    = 0;
         virtual void                 renderBorder(const SBorderRenderData& data)                            = 0;
         virtual void                 renderPolygon(const SPolygonRenderData& data)                          = 0;
-        virtual SP<IRendererTexture> captureTransitionState(const STransitionRenderData& data)                = 0;
+        virtual SP<IRendererTexture> captureTransitionState(const STransitionRenderData& data)              = 0;
         // Pre-render a single texture to a fit-resolved offscreen FBO and return the
         // resolved texture. Cached; the transition shaders are pure crossfades.
         virtual SP<IRendererTexture> renderFitFrame(const SP<IRendererTexture>& src, const CBox& box, eImageFitMode fitMode) = 0;
-        // Drop all cached fit-resolved pre-render FBOs (call when a transition starts/ends).
-        virtual void                 clearTransitionCache()                                                       = 0;
-        // Compile a transition shader from raw GLSL source and cache it. Returns the cache key.
-        virtual size_t               ensureTransitionShader(const std::string& source)                        = 0;
-        virtual void                 renderLine(const SLineRenderData& data)                                = 0;
-        virtual void                 signalRenderPoint(SP<CSyncTimeline> timeline)                          = 0;
+        virtual void                 clearTransitionCache()                                                                  = 0;
+        virtual size_t               ensureTransitionShader(const std::string& source)                                       = 0;
+        virtual void                 renderLine(const SLineRenderData& data)                                                 = 0;
+        virtual void                 signalRenderPoint(SP<CSyncTimeline> timeline)                                           = 0;
 
         virtual SP<CSyncTimeline>    exportSync(SP<Aquamarine::IBuffer> buf) = 0;
 

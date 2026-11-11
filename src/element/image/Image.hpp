@@ -46,30 +46,30 @@ namespace Hyprtoolkit {
         // of the load currently in flight; satisfiedGen is the gen satisfied by the
         // current cacheEntry (load completion OR cache hit). A request is satisfied iff
         // satisfiedGen == requestedGen.
-        uint64_t                                                              requestedGen = 0;
-        uint64_t                                                              inflightGen  = 0;
-        uint64_t                                                              satisfiedGen = 0;
+        uint64_t                  requestedGen = 0;
+        uint64_t                  inflightGen  = 0;
+        uint64_t                  satisfiedGen = 0;
 
-        std::string                                                           lastPath = "";
-        void*                                                                 lastData = nullptr;
+        std::string               lastPath = "";
+        void*                     lastData = nullptr;
 
-        Hyprutils::Math::Vector2D                                             preferredSvgSize();
-        void                                                                  postImageLoad(const SP<SImageLoadRequest>& request);
-        void                                                                  postImageScheduleRecalc(uint64_t gen);
-        std::string                                                           getCacheString();
-        bool                                                                  scalable() const;
+        Hyprutils::Math::Vector2D preferredSvgSize();
+        void                      postImageLoad(const SP<SImageLoadRequest>& request);
+        void                      postImageScheduleRecalc(uint64_t gen);
+        std::string               getCacheString();
+        bool                      scalable() const;
 
         struct {
             Hyprutils::Signal::CHyprSignalListener cacheEntryDone;
         } listeners;
 
         struct {
-            bool                                    active = false;
-            float                                   progress = 0.0f;
-            float                                   duration = 1.0f;
-            size_t                                  shaderKey = 0;
-            std::chrono::steady_clock::time_point   startTime;
-            Hyprutils::Math::Vector2D               randomPixel;
+            bool                                                active    = false;
+            float                                               progress  = 0.0f;
+            float                                               duration  = 1.0f;
+            size_t                                              shaderKey = 0;
+            std::chrono::steady_clock::time_point               startTime;
+            Hyprutils::Math::Vector2D                           randomPixel;
 
             Hyprutils::Memory::CSharedPointer<IRendererTexture> startTexture;
             Hyprutils::Memory::CSharedPointer<IRendererTexture> endTexture;

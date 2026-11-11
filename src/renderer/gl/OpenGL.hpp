@@ -43,16 +43,16 @@ namespace Hyprtoolkit {
         virtual void                 renderPolygon(const SPolygonRenderData& data);
         virtual SP<IRendererTexture> captureTransitionState(const STransitionRenderData& data);
         // Pre-render a single texture to a fit-resolved offscreen FBO (cached).
-        SP<IRendererTexture>         renderFitFrame(const SP<IRendererTexture>& src, const CBox& box, eImageFitMode fitMode);
-        void                         clearTransitionCache();
-        virtual size_t               ensureTransitionShader(const std::string& source);
-        virtual void                 renderLine(const SLineRenderData& data);
-        virtual SP<CSyncTimeline>    exportSync(SP<Aquamarine::IBuffer> buf);
-        virtual void                 signalRenderPoint(SP<CSyncTimeline> timeline);
+        SP<IRendererTexture>      renderFitFrame(const SP<IRendererTexture>& src, const CBox& box, eImageFitMode fitMode);
+        void                      clearTransitionCache();
+        virtual size_t            ensureTransitionShader(const std::string& source);
+        virtual void              renderLine(const SLineRenderData& data);
+        virtual SP<CSyncTimeline> exportSync(SP<Aquamarine::IBuffer> buf);
+        virtual void              signalRenderPoint(SP<CSyncTimeline> timeline);
 
-        virtual bool                 explicitSyncSupported();
+        virtual bool              explicitSyncSupported();
 
-        virtual int                  getMaxTextureSize();
+        virtual int               getMaxTextureSize();
 
       private:
         CBox                           logicalToGL(const CBox& box, bool transform = true);
@@ -185,7 +185,7 @@ namespace Hyprtoolkit {
 
         // Custom transition shaders, cached by source hash.
         struct SCachedShader {
-            CShader                            shader;
+            CShader shader;
         };
         std::unordered_map<size_t, SCachedShader> m_customShaders;
 
@@ -193,7 +193,7 @@ namespace Hyprtoolkit {
         // identity, its size, the target box (pixels) and fit mode, so a frame is only
         // re-rendered when one of those changes.
         struct SFitFrameKey {
-            GLuint   texID   = 0;
+            GLuint   texID = 0;
             Vector2D size;
             int      boxW    = 0;
             int      boxH    = 0;
@@ -204,17 +204,17 @@ namespace Hyprtoolkit {
         };
         struct SFitFrameKeyHash {
             size_t operator()(const SFitFrameKey& k) const {
-                return std::hash<GLuint>()(k.texID) ^ std::hash<float>()(k.size.x) ^ std::hash<float>()(k.size.y) ^
-                    std::hash<int>()(k.boxW) ^ std::hash<int>()(k.boxH) ^ std::hash<int>()(k.fitMode);
+                return std::hash<GLuint>()(k.texID) ^ std::hash<float>()(k.size.x) ^ std::hash<float>()(k.size.y) ^ std::hash<int>()(k.boxW) ^ std::hash<int>()(k.boxH) ^
+                    std::hash<int>()(k.fitMode);
             }
         };
         std::unordered_map<SFitFrameKey, SP<CGLTexture>, SFitFrameKeyHash> m_fitFrameCache;
 
-        Mat3x3                             m_projMatrix = Mat3x3::identity();
-        Mat3x3                             m_projection;
+        Mat3x3                                                             m_projMatrix = Mat3x3::identity();
+        Mat3x3                                                             m_projection;
 
-        Vector2D                           m_currentViewport;
-        CBox                               m_lastScissorBox;
+        Vector2D                                                           m_currentViewport;
+        CBox                                                               m_lastScissorBox;
 
         friend class CRenderbuffer;
         friend class CGLTexture;
