@@ -25,6 +25,7 @@ namespace Hyprtoolkit {
         Hyprutils::Memory::CSharedPointer<CSliderBuilder>        val(float);
         Hyprutils::Memory::CSharedPointer<CSliderBuilder>        snapInt(bool);
         Hyprutils::Memory::CSharedPointer<CSliderBuilder>        size(CDynamicSize&&);
+        Hyprutils::Memory::CSharedPointer<CSliderBuilder>        showLabel(bool);
 
         Hyprutils::Memory::CSharedPointer<CSliderElement>        commence();
 
@@ -54,7 +55,7 @@ namespace Hyprtoolkit {
 
         virtual void                                             paint();
         virtual void                                             reposition(const Hyprutils::Math::CBox& box, const Hyprutils::Math::Vector2D& maxSize = {-1, -1});
-        virtual std::optional<Hyprutils::Math::Vector2D>         preferredSize(const Hyprutils::Math::Vector2D& parent);
+        virtual std::optional<Hyprutils::Math::Vector2D>         preferredSize(const Hyprutils::Math::Vector2D& parent, bool grow = true);
         virtual std::optional<Hyprutils::Math::Vector2D>         minimumSize(const Hyprutils::Math::Vector2D& parent);
         virtual std::optional<Hyprutils::Math::Vector2D>         maximumSize(const Hyprutils::Math::Vector2D& parent);
         virtual bool                                             acceptsMouseInput();

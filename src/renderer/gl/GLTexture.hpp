@@ -11,6 +11,7 @@
 #include "../../helpers/Memory.hpp"
 
 namespace Hyprtoolkit {
+    struct SBackendLifetime;
     enum eGLTextureType : uint8_t {
         TEXTURE_INVALID,  // Invalid
         TEXTURE_RGBA,     // 4 channels
@@ -22,7 +23,6 @@ namespace Hyprtoolkit {
 
     class CGLTexture : public IRendererTexture {
       public:
-        CGLTexture(ASP<Hyprgraphics::IAsyncResource>);
         CGLTexture();
         virtual ~CGLTexture();
 
@@ -32,6 +32,12 @@ namespace Hyprtoolkit {
         virtual eImageFitMode             fitMode();
         virtual Hyprutils::Math::Vector2D size();
 
+        // attaches an async resource. uploads immediately if ready, otherwise
+        // arms a listener that runs upload() when the resource is ready. self is
+        // captured weakly so the listener becomes a no-op if the texture is
+        // destroyed before the resource finishes loading.
+        void                              attachAsync(WP<CGLTexture> self, ASP<Hyprgraphics::IAsyncResource> resource);
+
         eGLTextureType                    m_type      = TEXTURE_RGBA;
         GLenum                            m_target    = GL_TEXTURE_2D;
         bool                              m_allocated = false;
@@ -40,8 +46,11 @@ namespace Hyprtoolkit {
         Hyprutils::Math::Vector2D         m_size      = {};
 
         ASP<Hyprgraphics::IAsyncResource> m_resource;
+        WP<SBackendLifetime>              m_lifetime;
 
         void                              upload();
+        void                              uploadOnContext(WP<CGLTexture> self);
+        void                              releaseFromRenderer();
         void                              allocate();
         void                              bind();
     };

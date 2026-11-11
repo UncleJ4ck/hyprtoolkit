@@ -19,7 +19,6 @@ CMakeUserPresets.json
 #cmake-build-*
 
 build/
-result
 .vscode/
 .cache/
 
@@ -28,3 +27,6 @@ protocols/*.hpp
 
 *.inc
 src/renderer/gl/shaders/Shaders.hpp
+
+.envrc
+.direnv/

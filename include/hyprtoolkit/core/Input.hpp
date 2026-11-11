@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <string>
 
+#include <hyprutils/math/Vector2D.hpp>
+
 namespace Hyprtoolkit::Input {
     enum eMouseButton : uint8_t {
         MOUSE_BUTTON_UNKNOWN,
@@ -25,6 +27,8 @@ namespace Hyprtoolkit::Input {
         HT_MODIFIER_MOD3  = (1 << 5),
         HT_MODIFIER_META  = (1 << 6),
         HT_MODIFIER_MOD5  = (1 << 7),
+
+        HT_MODIFIER_CTRL_SHIFT = HT_MODIFIER_CTRL | HT_MODIFIER_SHIFT,
     };
 
     struct SKeyboardKeyEvent {
@@ -33,5 +37,11 @@ namespace Hyprtoolkit::Input {
         bool        repeat    = false;
         std::string utf8      = "";
         uint32_t    modMask   = 0; // eKeyboardModifier
+    };
+
+    struct STouchEvent {
+        int32_t                   id = 0;
+        Hyprutils::Math::Vector2D local;
+        uint32_t                  timeMs = 0;
     };
 }

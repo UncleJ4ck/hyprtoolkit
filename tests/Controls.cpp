@@ -9,7 +9,9 @@
 #include <hyprtoolkit/element/Button.hpp>
 #include <hyprtoolkit/element/Null.hpp>
 #include <hyprtoolkit/element/Checkbox.hpp>
+#include <hyprtoolkit/element/RadioGroup.hpp>
 #include <hyprtoolkit/element/Spinbox.hpp>
+#include <hyprtoolkit/element/ProgressBar.hpp>
 #include <hyprtoolkit/element/Slider.hpp>
 #include <hyprtoolkit/element/ScrollArea.hpp>
 #include <hyprtoolkit/element/Combobox.hpp>
@@ -30,6 +32,7 @@ using namespace Hyprtoolkit;
 
 static SP<IBackend>             backend;
 static SP<CSliderElement>       hiddenSlider;
+static SP<CTextElement>         hiddenText;
 static SP<CColumnLayoutElement> mainLayout;
 static SP<IWindow>              window;
 static SP<IWindow>              popup;
@@ -45,6 +48,17 @@ static void toggleVisibilityOfSecretSlider() {
         mainLayout->addChild(hiddenSlider);
     else
         mainLayout->removeChild(hiddenSlider);
+
+    visible = !visible;
+}
+
+static void toggleTextVisibility() {
+    static bool visible = false;
+
+    if (!visible)
+        mainLayout->addChild(hiddenText);
+    else
+        mainLayout->removeChild(hiddenText);
 
     visible = !visible;
 }
@@ -95,7 +109,7 @@ static SP<IElement> stretchLayout(std::string&& label, SP<IElement> control) {
     auto nullE   = CNullBuilder::begin()->commence();
     nullE->setGrow(true);
 
-    auto container = CNullBuilder::begin()->size({CDynamicSize::HT_SIZE_AUTO, CDynamicSize::HT_SIZE_AUTO, {1, 1}})->commence();
+    auto container = CNullBuilder::begin()->size({CDynamicSize::HT_SIZE_PERCENT, CDynamicSize::HT_SIZE_AUTO, {1, 1}})->commence();
     container->setMargin(4);
 
     bg->addChild(container);
@@ -113,9 +127,10 @@ int main(int argc, char** argv, char** envp) {
 
     //
     window = CWindowBuilder::begin() //
-                 ->preferredSize({480, 480})
+                 ->preferredSize({480, 700})
                  ->minSize({480, 480})
                  ->maxSize({1280, 720})
+                 ->resizable(true)
                  ->appTitle("Controls")
                  ->appClass("hyprtoolkit-controls")
                  ->commence();
@@ -124,7 +139,7 @@ int main(int argc, char** argv, char** envp) {
 
     window->m_rootElement->addChild(bg);
 
-    auto scroll = CScrollAreaBuilder::begin()->scrollY(true)->size({CDynamicSize::HT_SIZE_PERCENT, CDynamicSize::HT_SIZE_PERCENT, {1.F, 1.F}})->commence();
+    auto scroll = CScrollAreaBuilder::begin()->scrollY(true)->showScrollbar(true)->size({CDynamicSize::HT_SIZE_PERCENT, CDynamicSize::HT_SIZE_PERCENT, {1.F, 1.F}})->commence();
 
     mainLayout = CColumnLayoutBuilder::begin()->gap(3)->size({CDynamicSize::HT_SIZE_PERCENT, CDynamicSize::HT_SIZE_AUTO, {0.7F, 1.F}})->commence();
 
@@ -167,13 +182,36 @@ int main(int argc, char** argv, char** envp) {
                        ->onMainClick([](SP<CButtonElement>) { selectTextbox(); })
                        ->commence();
 
+    auto button4 = CButtonBuilder::begin()
+                       ->label("Show text")
+                       ->size({CDynamicSize::HT_SIZE_AUTO, CDynamicSize::HT_SIZE_AUTO, {1, 1}})
+                       ->onMainClick([](SP<CButtonElement>) { toggleTextVisibility(); })
+                       ->commence();
+
     auto checkbox  = stretchLayout("checkbox 1", CCheckboxBuilder::begin()->commence());
     auto checkbox2 = stretchLayout("checkbox 2", CCheckboxBuilder::begin()->commence());
+
+    auto radio1 = CCheckboxBuilder::begin()->style(HT_CHECKBOX_STYLE_RADIO)->toggled(true)->commence();
+    auto radio2 = CCheckboxBuilder::begin()->style(HT_CHECKBOX_STYLE_RADIO)->commence();
+    auto radio3 = CCheckboxBuilder::begin()->style(HT_CHECKBOX_STYLE_RADIO)->commence();
+
+    auto radioGroup = CRadioGroup::create();
+    radioGroup->add(radio1);
+    radioGroup->add(radio2);
+    radioGroup->add(radio3);
+
+    auto radioRow = CRowLayoutBuilder::begin()->gap(8)->size({CDynamicSize::HT_SIZE_PERCENT, CDynamicSize::HT_SIZE_AUTO, {1, 1}})->commence();
+    radioRow->addChild(radio1);
+    radioRow->addChild(CTextBuilder::begin()->text("first")->color([] { return backend->getPalette()->m_colors.text; })->commence());
+    radioRow->addChild(radio2);
+    radioRow->addChild(CTextBuilder::begin()->text("second")->color([] { return backend->getPalette()->m_colors.text; })->commence());
+    radioRow->addChild(radio3);
+    radioRow->addChild(CTextBuilder::begin()->text("third")->color([] { return backend->getPalette()->m_colors.text; })->commence());
 
     auto spinbox = CSpinboxBuilder::begin()
                        ->label("Spinbox")
                        ->items({"Hello", "World", "Amongus"})
-                       ->size({CDynamicSize::HT_SIZE_AUTO, CDynamicSize::HT_SIZE_AUTO, {1, 1}})
+                       ->size({CDynamicSize::HT_SIZE_PERCENT, CDynamicSize::HT_SIZE_AUTO, {1, 1}})
                        ->fill(true)
                        ->commence();
 
@@ -181,6 +219,9 @@ int main(int argc, char** argv, char** envp) {
 
     auto slider2 = stretchLayout(
         "Big Slider", CSliderBuilder::begin()->max(10000)->val(2500)->size({CDynamicSize::HT_SIZE_PERCENT, CDynamicSize::HT_SIZE_ABSOLUTE, {0.5F, SLIDER_HEIGHT}})->commence());
+
+    auto progress = stretchLayout(
+        "Progress", CProgressBarBuilder::begin()->value(0.42F)->size({CDynamicSize::HT_SIZE_PERCENT, CDynamicSize::HT_SIZE_ABSOLUTE, {0.5F, 14.F}})->commence());
 
     auto combo = stretchLayout(
         "Combo",
@@ -191,25 +232,45 @@ int main(int argc, char** argv, char** envp) {
             ->size({CDynamicSize::HT_SIZE_PERCENT, CDynamicSize::HT_SIZE_ABSOLUTE, {0.3F, 25.F}})
             ->commence());
 
-    textbox =
-        CTextboxBuilder::begin()->defaultText("")->placeholder("placeholder")->size({CDynamicSize::HT_SIZE_ABSOLUTE, CDynamicSize::HT_SIZE_ABSOLUTE, {150.F, 24.F}})->commence();
+    textbox = CTextboxBuilder::begin()
+                  ->defaultText("")
+                  ->placeholder("placeholder")
+                  ->size({CDynamicSize::HT_SIZE_ABSOLUTE, CDynamicSize::HT_SIZE_ABSOLUTE, {150.F, 60.F}})
+                  ->multiline(true)
+                  ->commence();
 
     auto textboxCont = stretchLayout("Textbox", textbox);
 
+    auto text = CTextBuilder::begin()
+                    ->text("This is a link test: <a href=\"https://hypr.land\">click me</a>! Test overflow as well woo woo woo woo woo woo woo woo I am vaxry")
+                    ->commence();
+    text->setTooltip("Example tooltip!");
+
     hiddenSlider = CSliderBuilder::begin()->max(100)->val(69)->size({CDynamicSize::HT_SIZE_PERCENT, CDynamicSize::HT_SIZE_ABSOLUTE, {1.F, SLIDER_HEIGHT}})->commence();
+    hiddenText   = CTextBuilder::begin()
+                     ->text("hi hi overflow overflow overflow overflow overflow overflow overflow overflow overflow overflow overflow overflow overflow overflow overflow")
+                     ->commence();
+
+    auto rowl = CRowLayoutBuilder::begin()->size({CDynamicSize::HT_SIZE_PERCENT, CDynamicSize::HT_SIZE_AUTO, {1, 1}})->commence();
+    rowl->addChild(CTextBuilder::begin()->text("hello this will be ellipsized woooo oooo ooo oo oo oo oo o oo")->commence());
 
     mainLayout->addChild(title);
     mainLayout->addChild(hr);
     mainLayout->addChild(button1);
     mainLayout->addChild(button2);
     mainLayout->addChild(button3);
+    mainLayout->addChild(button4);
     mainLayout->addChild(checkbox);
     mainLayout->addChild(checkbox2);
+    mainLayout->addChild(radioRow);
     mainLayout->addChild(spinbox);
     mainLayout->addChild(slider);
     mainLayout->addChild(slider2);
+    mainLayout->addChild(progress);
     mainLayout->addChild(combo);
     mainLayout->addChild(textboxCont);
+    mainLayout->addChild(text);
+    mainLayout->addChild(rowl);
 
     auto iconDesc = backend->systemIcons()->lookupIcon("action-unavailable-symbolic");
     if (!iconDesc->exists())

@@ -2,28 +2,50 @@
 #include "OpenGL.hpp"
 
 #include "../../core/InternalBackend.hpp"
+#include "../../core/BackendContext.hpp"
 
 using namespace Hyprtoolkit;
 
-CGLTexture::CGLTexture(ASP<Hyprgraphics::IAsyncResource> resource) {
+CGLTexture::CGLTexture() {
+    if (g_backendServices)
+        m_lifetime = g_backendServices->lifetime;
+}
+
+void CGLTexture::attachAsync(WP<CGLTexture> self, ASP<Hyprgraphics::IAsyncResource> resource) {
     if (resource->m_ready) {
         m_resource = resource;
-        upload();
+        uploadOnContext(self);
         return;
     }
 
-    // not ready yet, add a timer when it is and do it
-    // FIXME: could UAF. Maybe keep wref?
-    resource->m_events.finished.listenStatic([this, resource] {
-        g_backend->addIdle([this, resource]() {
-            m_resource = resource;
-            upload();
+    resource->m_events.finished.listenStatic([self, resource, lifetime = WP<SBackendLifetime>{g_backendServices->lifetime}] {
+        // backend may have been torn down between enqueue and finish (shutdown
+        // race). dropping the upload is safe: the texture is either gone too
+        // (lock fails below) or about to be.
+        if (!g_backend || !lifetime)
+            return;
+        g_backend->addIdle([self, resource, lifetime] {
+            const auto SELF = self.lock();
+            if (!SELF || !lifetime)
+                return;
+            SELF->m_resource = resource;
+            SELF->uploadOnContext(SELF);
         });
     });
 }
 
-CGLTexture::CGLTexture() {
-    ;
+void CGLTexture::uploadOnContext(WP<CGLTexture> self) {
+    if (g_openGL && g_openGL->m_borrowedContext && !g_openGL->m_window) {
+        g_openGL->enqueueGL([self] {
+            if (const auto locked = self.lock())
+                locked->upload();
+        });
+        return;
+    }
+
+    if (g_openGL)
+        g_openGL->makeEGLCurrent();
+    upload();
 }
 
 CGLTexture::~CGLTexture() {
@@ -69,6 +91,20 @@ IRendererTexture::eTextureType CGLTexture::type() {
 }
 
 void CGLTexture::destroy() {
+    if (!m_lifetime) {
+        m_texID     = 0;
+        m_allocated = false;
+        return;
+    }
+
+    if (m_allocated && g_openGL && g_openGL->m_borrowedContext && !g_openGL->contextCurrent()) {
+        const auto texture = m_texID;
+        g_openGL->enqueueGL([texture] { glDeleteTextures(1, &texture); });
+        m_texID     = 0;
+        m_allocated = false;
+        return;
+    }
+
     if (g_openGL)
         g_openGL->makeEGLCurrent();
 
@@ -77,6 +113,14 @@ void CGLTexture::destroy() {
         m_texID = 0;
     }
     m_allocated = false;
+}
+
+void CGLTexture::releaseFromRenderer() {
+    if (m_allocated)
+        glDeleteTextures(1, &m_texID);
+    m_texID     = 0;
+    m_allocated = false;
+    m_type      = TEXTURE_INVALID;
 }
 
 void CGLTexture::allocate() {

@@ -1,5 +1,7 @@
 #include "ToolkitWindow.hpp"
 
+#include <utility>
+
 #include "../core/InternalBackend.hpp"
 #include "../layout/Positioner.hpp"
 #include "../core/AnimationManager.hpp"
@@ -54,6 +56,7 @@ void IToolkitWindow::damage(Hyprutils::Math::CRegion&& rg) {
 }
 
 void IToolkitWindow::damageEntire() {
+    m_opaqueRegionDirty = true;
     m_damageRing.damageEntire();
 
     scheduleFrame();
@@ -115,6 +118,9 @@ void IToolkitWindow::onPreRender() {
     std::vector<WP<IElement>> parents;
     parents.reserve(m_needsReposition.size());
     std::erase_if(m_needsReposition, [&parents](WP<IElement> e) {
+        if (!e->impl->parent)
+            return false;
+
         if (std::ranges::contains(parents, e->impl->parent))
             return true;
 
@@ -122,15 +128,12 @@ void IToolkitWindow::onPreRender() {
         return false;
     });
 
-    for (const auto& e : m_needsReposition) {
+    // step 4: grab what we need now so that anything scheduled during this pass will be
+    // picked up in the next frame
+    const auto needed = std::exchange(m_needsReposition, {});
+    for (const auto& e : needed) {
         g_positioner->repositionNeeded(e.lock());
     }
-    m_needsReposition.clear();
-
-    if (m_needsReposition.empty())
-        return;
-
-    g_positioner->position(m_rootElement, {{}, pixelSize() / scale()});
 }
 
 void IToolkitWindow::scheduleReposition(WP<IElement> e) {
@@ -171,15 +174,32 @@ void IToolkitWindow::updateFocus(const Hyprutils::Math::Vector2D& coords) {
 
     m_hoveredElements = alwaysHover;
 
-    if ((el == (m_mainHoverElement ? m_mainHoverElement->m_el : WP<IElement>{})) || m_mouseIsDown /* Lock focus while mouse is down */)
+    if ((el == (m_mainHoverElement ? m_mainHoverElement->m_el : WP<IElement>{})) || m_mouseIsDown /* Lock focus while mouse is down */) {
+        if (m_pointerFn)
+            setCursor(m_pointerFn());
         return;
+    }
 
     if (el) {
         initElementIfNeeded(el);
         m_mainHoverElement = makeShared<SToolkitFocusLock>(el, coords - el->impl->position.pos());
     } else
         m_mainHoverElement.reset();
-    setCursor(m_mainHoverElement && m_mainHoverElement->m_el ? m_mainHoverElement->m_el->pointerShape() : HT_POINTER_ARROW);
+
+    if (m_mainHoverElement && m_mainHoverElement->m_el) {
+        if (auto fn = m_mainHoverElement->m_el->pointerShapeFn(); fn)
+            m_pointerFn = fn;
+        else {
+            setCursor(m_mainHoverElement->m_el->pointerShape());
+            m_pointerFn = nullptr;
+        }
+    } else {
+        setCursor(HT_POINTER_ARROW);
+        m_pointerFn = nullptr;
+    }
+
+    if (m_pointerFn)
+        setCursor(m_pointerFn());
 
     if (m_mainHoverElement && m_mainHoverElement->m_el && m_mainHoverElement->m_el->impl->hasTooltip && !m_tooltip.hoverTooltipTimer) {
         m_tooltip.hoverTooltipTimer = g_backend->addTimer(
@@ -201,7 +221,7 @@ void IToolkitWindow::mouseEnter(const Hyprutils::Math::Vector2D& local) {
         m_mainHoverElement->m_el->impl->m_externalEvents.mouseMove.emit(local - m_mainHoverElement->m_el->impl->position.pos());
 
     for (const auto& e : m_hoveredElements) {
-        if (!e->m_el)
+        if (!e->m_el || (m_mainHoverElement && e->m_el == m_mainHoverElement->m_el))
             continue;
         e->m_el->impl->m_externalEvents.mouseMove.emit(local - e->m_el->impl->position.pos());
     }
@@ -220,7 +240,7 @@ void IToolkitWindow::mouseMove(const Hyprutils::Math::Vector2D& local) {
         m_mainHoverElement->m_el->impl->m_externalEvents.mouseMove.emit(local - m_mainHoverElement->m_el->impl->position.pos());
 
     for (const auto& e : m_hoveredElements) {
-        if (!e->m_el)
+        if (!e->m_el || (m_mainHoverElement && e->m_el == m_mainHoverElement->m_el))
             continue;
         e->m_el->impl->m_externalEvents.mouseMove.emit(local - e->m_el->impl->position.pos());
     }
@@ -247,7 +267,7 @@ void IToolkitWindow::mouseButton(const Input::eMouseButton button, bool state) {
         m_mainHoverElement->m_el->impl->m_externalEvents.mouseButton.emit(button, state);
 
     for (const auto& e : m_hoveredElements) {
-        if (!e->m_el)
+        if (!e->m_el || (m_mainHoverElement && e->m_el == m_mainHoverElement->m_el))
             continue;
         e->m_el->impl->m_externalEvents.mouseButton.emit(button, state);
     }
@@ -259,7 +279,7 @@ void IToolkitWindow::mouseAxis(const Input::eAxisAxis axis, float delta) {
         m_mainHoverElement->m_el->impl->m_externalEvents.mouseAxis.emit(axis, delta);
 
     for (const auto& e : m_hoveredElements) {
-        if (!e->m_el)
+        if (!e->m_el || (m_mainHoverElement && e->m_el == m_mainHoverElement->m_el))
             continue;
         e->m_el->impl->m_externalEvents.mouseAxis.emit(axis, delta);
     }
@@ -288,6 +308,9 @@ void IToolkitWindow::unfocusKeyboard() {
 }
 
 void IToolkitWindow::setKeyboardFocus(SP<IElement> e) {
+    if (m_keyboardFocus == e)
+        return;
+
     unfocusKeyboard();
 
     if (!e->acceptsKeyboardInput())
@@ -313,14 +336,16 @@ void IToolkitWindow::openTooltip(const std::string& s, const Hyprutils::Math::Ve
     if (m_tooltip.tooltipPopup)
         return;
 
-    m_tooltip.text = CTextBuilder::begin()->color([] { return g_palette->m_colors.text; })->text(std::string{s})->commence();
+    constexpr const double MAX_TOOLTIP_WIDTH = 400;
+
+    m_tooltip.text = CTextBuilder::begin()->color([] { return g_palette->m_colors.text; })->clampSize({MAX_TOOLTIP_WIDTH, -1.F})->text(std::string{s})->commence();
     m_tooltip.bg   = CRectangleBuilder::begin()
-                       ->color([] { return g_palette->m_colors.base; })
-                       ->borderThickness(1)
-                       ->borderColor([] { return g_palette->m_colors.base.brighten(0.2F); })
-                       ->rounding(g_palette->m_vars.smallRounding)
-                       ->size({CDynamicSize::HT_SIZE_PERCENT, CDynamicSize::HT_SIZE_PERCENT, {1, 1}})
-                       ->commence();
+                         ->color([] { return g_palette->m_colors.base; })
+                         ->borderThickness(1)
+                         ->borderColor([] { return g_palette->m_colors.base.brighten(0.2F); })
+                         ->rounding(g_palette->m_vars.smallRounding)
+                         ->size({CDynamicSize::HT_SIZE_PERCENT, CDynamicSize::HT_SIZE_PERCENT, {1, 1}})
+                         ->commence();
     m_tooltip.bg->setReceivesMouse(true);
     m_tooltip.bg->setMouseLeave([self = m_self, this]() {
         if (!self)
@@ -334,12 +359,12 @@ void IToolkitWindow::openTooltip(const std::string& s, const Hyprutils::Math::Ve
 
     m_tooltip.bg->addChild(m_tooltip.text);
 
-    const auto EXPECTED_TEXT_SIZE = m_tooltip.text->m_impl->getTextSizePreferred();
+    const auto EXPECTED_TEXT_SIZE = m_tooltip.text->preferredSize({0, 0}).value();
 
     m_tooltip.tooltipPopup = reinterpretPointerCast<IToolkitWindow>(CWindowBuilder::begin()
                                                                         ->type(eWindowType::HT_WINDOW_POPUP)
                                                                         ->pos(pos)
-                                                                        ->preferredSize(EXPECTED_TEXT_SIZE + Hyprutils::Math::Vector2D{10, 10})
+                                                                        ->preferredSize(EXPECTED_TEXT_SIZE + Hyprutils::Math::Vector2D{30, 10})
                                                                         ->parent(m_self.lock())
                                                                         ->commence());
 

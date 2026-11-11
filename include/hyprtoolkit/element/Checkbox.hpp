@@ -14,6 +14,11 @@ namespace Hyprtoolkit {
     struct SCheckboxData;
     class CCheckboxElement;
 
+    enum eCheckboxStyle : uint8_t {
+        HT_CHECKBOX_STYLE_CHECKMARK = 0,
+        HT_CHECKBOX_STYLE_RADIO,
+    };
+
     class CCheckboxBuilder {
       public:
         ~CCheckboxBuilder() = default;
@@ -21,6 +26,7 @@ namespace Hyprtoolkit {
         static Hyprutils::Memory::CSharedPointer<CCheckboxBuilder> begin();
         Hyprutils::Memory::CSharedPointer<CCheckboxBuilder>        onToggled(std::function<void(Hyprutils::Memory::CSharedPointer<CCheckboxElement>, bool)>&&);
         Hyprutils::Memory::CSharedPointer<CCheckboxBuilder>        toggled(bool);
+        Hyprutils::Memory::CSharedPointer<CCheckboxBuilder>        style(eCheckboxStyle);
         Hyprutils::Memory::CSharedPointer<CCheckboxBuilder>        size(CDynamicSize&&);
 
         Hyprutils::Memory::CSharedPointer<CCheckboxElement>        commence();
@@ -52,7 +58,7 @@ namespace Hyprtoolkit {
 
         virtual void                                               paint();
         virtual void                                               reposition(const Hyprutils::Math::CBox& box, const Hyprutils::Math::Vector2D& maxSize = {-1, -1});
-        virtual std::optional<Hyprutils::Math::Vector2D>           preferredSize(const Hyprutils::Math::Vector2D& parent);
+        virtual std::optional<Hyprutils::Math::Vector2D>           preferredSize(const Hyprutils::Math::Vector2D& parent, bool grow = true);
         virtual std::optional<Hyprutils::Math::Vector2D>           minimumSize(const Hyprutils::Math::Vector2D& parent);
         virtual std::optional<Hyprutils::Math::Vector2D>           maximumSize(const Hyprutils::Math::Vector2D& parent);
         virtual bool                                               acceptsMouseInput();
@@ -62,5 +68,6 @@ namespace Hyprtoolkit {
         Hyprutils::Memory::CUniquePointer<SCheckboxImpl>           m_impl;
 
         friend class CCheckboxBuilder;
+        friend class CRadioGroup;
     };
 };

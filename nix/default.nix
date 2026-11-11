@@ -3,31 +3,23 @@
   stdenv,
   cmake,
   pkg-config,
+  abseil-cpp,
   aquamarine,
-  cairo,
-  epoll-shim,
   gtest,
   hyprgraphics,
   hyprlang,
   hyprutils,
   hyprwayland-scanner,
   iniparser,
-  libGL,
-  libdrm,
   libgbm,
   libxkbcommon,
-  pango,
-  pixman,
-  wayland,
   wayland-protocols,
   wayland-scanner,
   version ? "git",
   doCheck ? false,
 }:
 let
-  inherit (lib.attrsets) mapAttrsToList;
-  inherit (lib.lists) optional;
-  inherit (lib.strings) cmakeBool optionalString;
+  inherit (lib.strings) optionalString;
 in
 stdenv.mkDerivation {
   pname = "hyprtoolkit" + optionalString doCheck "-with-tests";
@@ -42,27 +34,32 @@ stdenv.mkDerivation {
     wayland-scanner
   ];
 
-  buildInputs = [
+  propagatedBuildInputs = [
     aquamarine
-    cairo
-    gtest
     hyprgraphics
-    hyprlang
     hyprutils
+  ];
+
+  buildInputs = [
+    abseil-cpp
+    gtest
+    hyprlang
     iniparser
-    libGL
-    libdrm
     libgbm
     libxkbcommon
-    pango
-    pixman
-    wayland
     wayland-protocols
-  ] ++ (optional stdenv.isBSD epoll-shim);
+    wayland-scanner
+  ];
 
-  cmakeFlags = mapAttrsToList cmakeBool {
-    "DISABLE_TESTING" = !doCheck;
-  };
+  env.XDG_RUNTIME_DIR = "/tmp/runtime";
+
+  strictDeps = true;
+
+  cmakeBuildType = if doCheck then "Debug" else "RelWithDebInfo";
+
+  preCheck = ''
+    mkdir -p /tmp/runtime
+  '';
 
   meta = {
     homepage = "https://github.com/hyprwm/hyprtoolkit";

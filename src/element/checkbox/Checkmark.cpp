@@ -32,6 +32,10 @@ void CCheckmarkElement::paint() {
     });
 }
 
+void CCheckmarkElement::recheckColor() {
+    *m_color = m_data.color();
+}
+
 void CCheckmarkElement::reposition(const Hyprutils::Math::CBox& box, const Hyprutils::Math::Vector2D& maxSize) {
     IElement::reposition(box);
 
@@ -42,12 +46,12 @@ Hyprutils::Math::Vector2D CCheckmarkElement::size() {
     return impl->position.size();
 }
 
-std::optional<Vector2D> CCheckmarkElement::preferredSize(const Hyprutils::Math::Vector2D& parent) {
-    return m_data.size.calculate(parent);
+std::optional<Vector2D> CCheckmarkElement::preferredSize(const Hyprutils::Math::Vector2D& parent, bool grow) {
+    return m_data.size.calculate(parent, grow);
 }
 
 std::optional<Vector2D> CCheckmarkElement::minimumSize(const Hyprutils::Math::Vector2D& parent) {
-    return m_data.size.calculate(parent);
+    return m_data.size.calculate(parent, false);
 }
 
 std::optional<Vector2D> CCheckmarkElement::maximumSize(const Hyprutils::Math::Vector2D& parent) {

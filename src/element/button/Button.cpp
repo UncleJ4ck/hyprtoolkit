@@ -12,6 +12,22 @@
 using namespace Hyprtoolkit;
 using namespace Hyprgraphics;
 
+constexpr double  BUTTON_PAD = 7;
+
+static CHyprColor buttonColor(const SButtonImpl& impl) {
+    if (impl.data.accent)
+        return impl.hovered ? g_palette->m_colors.accent.brighten(0.1F) : g_palette->m_colors.accent;
+    if (impl.data.noBg)
+        return impl.hovered ? g_palette->m_colors.base.brighten(0.05F) : CHyprColor{g_palette->m_colors.base.asRGB(), 0.F};
+    return impl.hovered ? g_palette->m_colors.base.brighten(impl.data.noBorder ? 0.3F : 0.11F) : g_palette->m_colors.base;
+}
+
+static CHyprColor buttonBorderColor(const SButtonImpl& impl) {
+    if (impl.hovered || impl.data.accent)
+        return g_palette->m_colors.accent;
+    return g_palette->m_colors.alternateBase;
+}
+
 SP<CButtonElement> CButtonElement::create(const SButtonData& data) {
     auto p          = SP<CButtonElement>(new CButtonElement(data));
     p->impl->self   = p;
@@ -23,13 +39,9 @@ CButtonElement::CButtonElement(const SButtonData& data) : IElement(), m_impl(mak
     m_impl->data = data;
 
     m_impl->background = CRectangleBuilder::begin()
-                             ->color([nobg = m_impl->data.noBg] {
-                                 if (nobg)
-                                     return CHyprColor{g_palette->m_colors.base.asRGB(), 0.F};
-                                 return g_palette->m_colors.base;
-                             })
+                             ->color([impl = m_impl.get()] { return buttonColor(*impl); })
                              ->rounding(g_palette->m_vars.smallRounding)
-                             ->borderColor([] { return g_palette->m_colors.alternateBase; })
+                             ->borderColor([impl = m_impl.get()] { return buttonBorderColor(*impl); })
                              ->borderThickness(data.noBorder ? 0 : 1)
                              ->size(CDynamicSize{CDynamicSize::HT_SIZE_PERCENT, CDynamicSize::HT_SIZE_PERCENT, {1.F, 1.F}})
                              ->commence();
@@ -38,14 +50,22 @@ CButtonElement::CButtonElement(const SButtonData& data) : IElement(), m_impl(mak
                         ->text(std::string{data.label})
                         ->fontSize(CFontSize{data.fontSize})
                         ->fontFamily(std::string{data.fontFamily})
-                        ->color([] { return g_palette->m_colors.text; })
+                        ->color([impl = m_impl.get()] {
+                            auto c = g_palette->m_colors.text;
+                            if (impl->data.accent)
+                                c = g_palette->m_colors.accent.asOkLab().l > 0.5 ? g_palette->m_colors.background : g_palette->m_colors.brightText;
+                            if (!impl->data.enabled)
+                                c.a *= 0.5F;
+                            return c;
+                        })
                         ->size({CDynamicSize::HT_SIZE_AUTO, CDynamicSize::HT_SIZE_AUTO, {1.F, 1.F}})
+                        ->align(m_impl->data.alignText)
                         ->callback([this] {
                             m_impl->labelChanged = true;
                             if (impl->window)
                                 impl->window->scheduleReposition(impl->self);
                         })
-                        ->noEllipsize(true)
+                        ->noEllipsize(!m_impl->data.ellipsize)
                         ->commence();
 
     m_impl->label->setPositionMode(HT_POSITION_ABSOLUTE);
@@ -56,34 +76,22 @@ CButtonElement::CButtonElement(const SButtonData& data) : IElement(), m_impl(mak
 
     addChild(m_impl->background);
     m_impl->background->addChild(m_impl->label);
-    m_impl->label->setMargin(2);
+    m_impl->label->setMargin(BUTTON_PAD);
 
     impl->m_externalEvents.mouseEnter.listenStatic([this](const Vector2D& pos) {
-        m_impl->background
-            ->rebuild() //
-            ->color([nb = m_impl->data.noBorder, nobg = m_impl->data.noBg] {
-                if (nobg)
-                    return g_palette->m_colors.base.brighten(0.05F);
-                return g_palette->m_colors.base.brighten(nb ? 0.3F : 0.11F);
-            })
-            ->borderColor([] { return g_palette->m_colors.accent; })
-            ->commence();
+        if (!m_impl->data.enabled)
+            return;
+        m_impl->hovered = true;
+        SP<IElement>{m_impl->background}->recheckColor();
     });
 
     impl->m_externalEvents.mouseLeave.listenStatic([this]() {
-        m_impl->background
-            ->rebuild() //
-            ->color([nobg = m_impl->data.noBg] {
-                if (nobg)
-                    return CHyprColor{g_palette->m_colors.base.asRGB(), 0.F};
-                return g_palette->m_colors.base;
-            })
-            ->borderColor([] { return g_palette->m_colors.alternateBase; })
-            ->commence();
+        m_impl->hovered = false;
+        SP<IElement>{m_impl->background}->recheckColor();
     });
 
     impl->m_externalEvents.mouseButton.listenStatic([this](const Input::eMouseButton button, bool down) {
-        if (!down)
+        if (!down || !m_impl->data.enabled)
             return;
 
         if (button == Input::MOUSE_BUTTON_RIGHT) {
@@ -108,6 +116,25 @@ void CButtonElement::reposition(const Hyprutils::Math::CBox& box, const Hyprutil
     g_positioner->positionChildren(impl->self.lock());
 }
 
+void CButtonElement::setLabel(std::string label) {
+    if (label == m_impl->data.label)
+        return;
+
+    m_impl->data.label = std::move(label);
+    m_impl->label->setText(m_impl->data.label);
+}
+
+void CButtonElement::setEnabled(bool enabled) {
+    if (enabled == m_impl->data.enabled)
+        return;
+
+    m_impl->data.enabled = enabled;
+    m_impl->label->recheckColor();
+
+    if (impl->window)
+        impl->window->scheduleReposition(impl->self);
+}
+
 SP<CButtonBuilder> CButtonElement::rebuild() {
     auto p       = SP<CButtonBuilder>(new CButtonBuilder());
     p->m_self    = p;
@@ -119,12 +146,33 @@ SP<CButtonBuilder> CButtonElement::rebuild() {
 void CButtonElement::replaceData(const SButtonData& data) {
     m_impl->data = data;
 
-    m_impl->label->rebuild()->text(std::string{data.label})->commence();
+    m_impl->background->rebuild()
+        ->color([impl = m_impl.get()] { return buttonColor(*impl); })
+        ->borderColor([impl = m_impl.get()] { return buttonBorderColor(*impl); })
+        ->borderThickness(data.noBorder ? 0 : 1)
+        ->commence();
+
+    m_impl->label->rebuild()
+        ->text(std::string{data.label})
+        ->fontSize(CFontSize{data.fontSize})
+        ->fontFamily(std::string{data.fontFamily})
+        ->color([impl = m_impl.get()] {
+            auto c = g_palette->m_colors.text;
+            if (impl->data.accent)
+                c = g_palette->m_colors.accent.asOkLab().l > 0.5 ? g_palette->m_colors.background : g_palette->m_colors.brightText;
+            if (!impl->data.enabled)
+                c.a *= 0.5F;
+            return c;
+        })
+        ->align(data.alignText)
+        ->noEllipsize(!data.ellipsize)
+        ->commence();
 
     m_impl->label->setPositionFlag(HT_POSITION_FLAG_ALL, false);
     m_impl->label->setPositionFlag(
         m_impl->data.alignText == HT_FONT_ALIGN_CENTER ? HT_POSITION_FLAG_CENTER : (m_impl->data.alignText == HT_FONT_ALIGN_RIGHT ? HT_POSITION_FLAG_RIGHT : HT_POSITION_FLAG_LEFT),
         true);
+    m_impl->label->setPositionFlag(HT_POSITION_FLAG_VCENTER, true);
 
     if (impl->window)
         impl->window->scheduleReposition(impl->self);
@@ -134,52 +182,16 @@ Hyprutils::Math::Vector2D CButtonElement::size() {
     return impl->position.size();
 }
 
-constexpr double        BUTTON_PAD = 5;
-
-std::optional<Vector2D> CButtonElement::preferredSize(const Hyprutils::Math::Vector2D& parent) {
-    auto s = m_impl->data.size.calculate(parent);
-
-    if (s.x != -1 && s.y != -1)
-        return s;
-
-    const auto CALC = m_impl->label->preferredSize(parent).value() + Vector2D{BUTTON_PAD * 2, BUTTON_PAD * 2};
-
-    if (s.x == -1)
-        s.x = CALC.x;
-    if (s.y == -1)
-        s.y = CALC.y;
-
-    return s;
+std::optional<Vector2D> CButtonElement::preferredSize(const Hyprutils::Math::Vector2D& parent, bool grow) {
+    return impl->getPreferredSizeGeneric(m_impl->data.size, parent, grow);
 }
 
 std::optional<Vector2D> CButtonElement::minimumSize(const Hyprutils::Math::Vector2D& parent) {
-    auto s = m_impl->data.size.calculate(parent);
-    if (s.x != -1 && s.y != -1)
-        return s;
-
-    const auto CALC = m_impl->label->preferredSize(parent).value() + Vector2D{BUTTON_PAD * 2, BUTTON_PAD * 2};
-
-    if (s.x == -1)
-        s.x = CALC.x;
-    if (s.y == -1)
-        s.y = CALC.y;
-
-    return s;
+    return impl->getPreferredSizeGeneric(m_impl->data.size, parent, false);
 }
 
 std::optional<Vector2D> CButtonElement::maximumSize(const Hyprutils::Math::Vector2D& parent) {
-    auto s = m_impl->data.size.calculate(parent);
-    if (s.x != -1 && s.y != -1)
-        return s;
-
-    const auto CALC = m_impl->label->preferredSize(parent).value() + Vector2D{BUTTON_PAD * 2, BUTTON_PAD * 2};
-
-    if (s.x == -1)
-        s.x = CALC.x;
-    if (s.y == -1)
-        s.y = CALC.y;
-
-    return s;
+    return impl->getPreferredSizeGeneric(m_impl->data.size, parent, true);
 }
 
 bool CButtonElement::acceptsMouseInput() {

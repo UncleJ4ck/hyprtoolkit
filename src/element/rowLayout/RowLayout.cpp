@@ -7,6 +7,7 @@
 #include "../../window/ToolkitWindow.hpp"
 
 #include "../Element.hpp"
+#include "../LinearLayout.hpp"
 
 using namespace Hyprtoolkit;
 
@@ -25,6 +26,14 @@ void CRowLayoutElement::paint() {
     ; // no-op
 }
 
+SP<CRowLayoutBuilder> CRowLayoutElement::rebuild() {
+    auto p       = SP<CRowLayoutBuilder>(new CRowLayoutBuilder());
+    p->m_self    = p;
+    p->m_data    = makeUnique<SRowLayoutData>(m_impl->data);
+    p->m_element = m_impl->self;
+    return p;
+}
+
 void CRowLayoutElement::replaceData(const SRowLayoutData& data) {
     m_impl->data = data;
 
@@ -32,146 +41,9 @@ void CRowLayoutElement::replaceData(const SRowLayoutData& data) {
         impl->window->scheduleReposition(impl->self);
 }
 
-// FIXME: de-dup with columnlayout?
 void CRowLayoutElement::reposition(const Hyprutils::Math::CBox& sbox, const Hyprutils::Math::Vector2D& maxSize) {
     IElement::reposition(sbox);
-
-    const auto& box = impl->position;
-    const auto  C   = impl->children;
-
-    // position children in this layout.
-
-    float               usedX = 0;
-    const float         MAX_X = (uint64_t)impl->position.size().x;
-
-    size_t              i = 0;
-
-    std::vector<size_t> widths;
-    widths.resize(impl->children.size());
-
-    for (i = 0; i < C.size(); ++i) {
-        const auto& child = C.at(i);
-
-        Vector2D    cSize = childSize(child);
-        if (cSize == Vector2D{-1, -1})
-            cSize = {1.F, box.h};
-
-        if (usedX + cSize.x > MAX_X + 2 /* FIXME: WHERE THE FUCK IS THIS LOST??? */) {
-            // we exceeded our available space.
-            if (!child->minimumSize(box.size())) {
-                // doesn't fit: disable
-                child->impl->setFailedPositioning(true);
-                continue;
-            }
-
-            cSize = *child->minimumSize(box.size());
-
-            if (usedX + cSize.x > MAX_X + 1) {
-                // doesn't fit: try to shrink any previous element if it allows to do so
-                // FIXME: if we resize and fail to fit, it will mess up the layout a bit
-                float needs = (usedX + cSize.x) - (MAX_X + 1);
-                for (int j = i - 1; j >= 0; --j) {
-                    const auto& prevChild = C.at(j);
-                    const auto  MIN       = prevChild->minimumSize(impl->position.size());
-                    if (!MIN.has_value()) {
-                        // we can shrink this child to zero
-                        if (needs > widths.at(j)) {
-                            widths.at(j) -= needs - widths.at(j);
-                            needs -= needs - widths.at(j);
-                            continue;
-                        }
-
-                        widths.at(j) -= needs;
-                        needs = 0;
-                        break; // done
-                    } else if (MIN->x < widths.at(j)) {
-                        // we can shrink it a bit
-                        if (needs > (widths.at(j) - MIN->x)) {
-                            widths.at(j) -= needs - (widths.at(j) - MIN->x);
-                            needs -= needs - (widths.at(j) - MIN->x);
-                            continue;
-                        }
-
-                        widths.at(j) -= needs;
-                        needs = 0;
-                        break; // done
-                    }
-                }
-
-                if (needs > 0) {
-                    // doesn't fit: disable and expand the last if possible
-                    child->impl->setFailedPositioning(true);
-                    if (i != 0) {
-                        // try to expand last child
-                        const auto& lastChild = C.at(i - 1);
-
-                        if (lastChild->maximumSize(box.size()) && widths.at(i - 1) + MAX_X - usedX > lastChild->maximumSize(box.size())->x)
-                            continue; // too bad, we'll have a gap
-
-                        widths.at(i - 1) += MAX_X - usedX;
-                    }
-                    continue;
-                } else {
-
-                    child->impl->setFailedPositioning(false);
-                    widths.at(i) = cSize.x;
-
-                    // recalc usedX cuz we changed stuff
-                    usedX = 0;
-                    for (const auto& w : widths) {
-                        usedX += w + m_impl->data.gap;
-                    }
-
-                    continue;
-                }
-            }
-
-            // squeeze the last element in
-            widths.at(i) = MAX_X - usedX;
-            continue;
-        }
-
-        // can fit: use preferred
-        widths.at(i) = cSize.x;
-        child->impl->setFailedPositioning(false);
-        usedX += cSize.x + m_impl->data.gap;
-    }
-
-    if (!C.empty())
-        usedX -= m_impl->data.gap;
-
-    // check if any element grows and grow if applicable
-    if (usedX < MAX_X) {
-        for (i = 0; i < C.size(); ++i) {
-            const auto& child = C.at(i);
-
-            if (!child->impl->growH)
-                continue;
-
-            widths.at(i) += MAX_X - usedX;
-            break;
-        }
-    }
-
-    // widths done: lay out elements
-    size_t currentX = 0;
-
-    for (i = 0; i < C.size(); ++i) {
-        const auto& child = C.at(i);
-
-        if (child->impl->failedPositioning)
-            continue;
-
-        Vector2D cSize = childSize(child);
-
-        cSize.y = std::clamp(cSize.y, 0.0, impl->position.h);
-
-        CBox childBox = CBox{box.x + currentX, box.y + ((box.h - cSize.y) / 2), (double)widths.at(i), cSize.y};
-
-        g_positioner->position(child, childBox, Vector2D{-1.F, box.h});
-
-        currentX += childBox.w + m_impl->data.gap;
-    }
+    LinearLayout::reposition<true>(this, impl->position, impl->children, m_impl->data.gap, [this](SP<IElement> c) { return childSize(c); });
 }
 
 Hyprutils::Math::Vector2D CRowLayoutElement::childSize(Hyprutils::Memory::CSharedPointer<IElement> child) {
@@ -186,16 +58,27 @@ Hyprutils::Math::Vector2D CRowLayoutElement::size() {
     return impl->position.size();
 }
 
-std::optional<Hyprutils::Math::Vector2D> CRowLayoutElement::preferredSize(const Hyprutils::Math::Vector2D& parent) {
-    auto calc = m_impl->data.size.calculate(parent);
+std::optional<Hyprutils::Math::Vector2D> CRowLayoutElement::preferredSize(const Hyprutils::Math::Vector2D& parent, bool grow) {
+    auto calc = m_impl->data.size.calculate(parent, grow);
 
     if (calc.x != -1 && calc.y != -1)
         return calc;
 
+    Vector2D parentForChild = parent;
+    parentForChild.x -= impl->margin * 2;
+    parentForChild.y -= impl->margin * 2;
+
+    if (calc.x != -1) 
+        parentForChild.x = calc.x;
+    if (calc.y != -1)
+        parentForChild.y = calc.y;
+
     Vector2D max;
     for (const auto& child : impl->children) {
-        max.x += childSize(child).x + m_impl->data.gap;
-        max.y = std::max(max.y, childSize(child).y);
+        // We never want percent children to drive the preferred size of their parent.
+        Vector2D childPref = child->preferredSize(parentForChild, false).value_or({ 0, 0 });
+        max.x += childPref.x + m_impl->data.gap;
+        max.y = std::max(max.y, childPref.y);
     }
 
     if (!impl->children.empty())

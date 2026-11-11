@@ -1,6 +1,7 @@
 #pragma once
 
 #include <hyprtoolkit/palette/Color.hpp>
+#include <hyprtoolkit/palette/Gradient.hpp>
 #include <hyprtoolkit/types/ImageTypes.hpp>
 #include <hyprutils/math/Box.hpp>
 #include <hyprgraphics/color/Color.hpp>
@@ -36,17 +37,19 @@ namespace Hyprtoolkit {
         };
 
         struct STextureRenderData {
-            CBox                 box;
-            SP<IRendererTexture> texture;
-            float                a        = 1.F;
-            int                  rounding = 0;
+            CBox                      box;
+            SP<IRendererTexture>      texture;
+            float                     a        = 1.F;
+            int                       rounding = 0;
+            std::optional<CHyprColor> tint;
+            bool                      tintGrayscaleOnly = false;
         };
 
         struct SBorderRenderData {
-            CBox       box;
-            CHyprColor color    = {1, 1, 1, 1};
-            int        rounding = 0;
-            int        thick    = 0;
+            CBox               box;
+            CGradientValueData gradient;
+            int                rounding = 0;
+            int                thick    = 0;
         };
 
         struct SPolygonRenderData {
@@ -63,6 +66,7 @@ namespace Hyprtoolkit {
         };
 
         virtual void                 beginRendering(SP<IToolkitWindow> window, SP<Aquamarine::IBuffer> buf) = 0;
+        virtual void                 beginRenderingExternal(SP<IToolkitWindow> window, uint32_t bufferAge)  = 0;
         virtual void                 render(bool ignoreSync = false)                                        = 0;
         virtual void                 endRendering()                                                         = 0;
         virtual void                 renderRectangle(const SRectangleRenderData& data)                      = 0;
@@ -76,6 +80,8 @@ namespace Hyprtoolkit {
         virtual SP<CSyncTimeline>    exportSync(SP<Aquamarine::IBuffer> buf) = 0;
 
         virtual bool                 explicitSyncSupported() = 0;
+
+        virtual int                  getMaxTextureSize() = 0;
     };
 
     inline SP<IRenderer> g_renderer;

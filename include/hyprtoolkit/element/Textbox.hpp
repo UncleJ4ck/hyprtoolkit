@@ -2,9 +2,9 @@
 
 #include "Element.hpp"
 #include "../types/SizeType.hpp"
-#include "../palette/Color.hpp"
 
 #include <hyprutils/memory/UniquePtr.hpp>
+#include <tuple>
 
 namespace Hyprtoolkit {
 
@@ -21,6 +21,8 @@ namespace Hyprtoolkit {
         Hyprutils::Memory::CSharedPointer<CTextboxBuilder>        defaultText(std::string&&);
         Hyprutils::Memory::CSharedPointer<CTextboxBuilder>        onTextEdited(std::function<void(Hyprutils::Memory::CSharedPointer<CTextboxElement>, const std::string&)>&&);
         Hyprutils::Memory::CSharedPointer<CTextboxBuilder>        multiline(bool);
+        Hyprutils::Memory::CSharedPointer<CTextboxBuilder>        password(bool);
+        Hyprutils::Memory::CSharedPointer<CTextboxBuilder>        eyeIcon(bool);
         Hyprutils::Memory::CSharedPointer<CTextboxBuilder>        size(CDynamicSize&&);
 
         Hyprutils::Memory::CSharedPointer<CTextboxElement>        commence();
@@ -43,6 +45,10 @@ namespace Hyprtoolkit {
         virtual Hyprutils::Math::Vector2D                  size();
         void                                               focus(bool focus = true);
         std::string_view                                   currentText();
+        size_t                                             cursorPos() const;
+        std::tuple<ssize_t, ssize_t>                       selection() const;
+        void                                               setText(std::string text);
+        void                                               setPassword(bool password);
 
       private:
         static Hyprutils::Memory::CSharedPointer<CTextboxElement> create(const STextboxData& data);
@@ -53,11 +59,12 @@ namespace Hyprtoolkit {
 
         virtual void                                     paint();
         virtual void                                     reposition(const Hyprutils::Math::CBox& box, const Hyprutils::Math::Vector2D& maxSize = {-1, -1});
-        virtual std::optional<Hyprutils::Math::Vector2D> preferredSize(const Hyprutils::Math::Vector2D& parent);
+        virtual std::optional<Hyprutils::Math::Vector2D> preferredSize(const Hyprutils::Math::Vector2D& parent, bool grow = true);
         virtual std::optional<Hyprutils::Math::Vector2D> minimumSize(const Hyprutils::Math::Vector2D& parent);
         virtual std::optional<Hyprutils::Math::Vector2D> maximumSize(const Hyprutils::Math::Vector2D& parent);
         virtual bool                                     acceptsMouseInput();
         virtual ePointerShape                            pointerShape();
+        virtual std::function<ePointerShape()>           pointerShapeFn();
         virtual bool                                     acceptsKeyboardInput();
         virtual void                                     imCommitNewText(const std::string&);
         virtual void                                     imApplyText();

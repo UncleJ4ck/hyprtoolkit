@@ -7,6 +7,7 @@
 #include <hyprtoolkit/element/Button.hpp>
 
 #include "../../core/InternalBackend.hpp"
+#include "../../core/BackendContext.hpp"
 #include "../../layout/Positioner.hpp"
 #include "../../renderer/Renderer.hpp"
 #include "../../window/ToolkitWindow.hpp"
@@ -38,20 +39,25 @@ CComboboxElement::CComboboxElement(const SComboboxData& data) : IElement(), m_im
 }
 
 void CComboboxElement::init() {
-    m_impl->layout = CRowLayoutBuilder::begin()->size({CDynamicSize::HT_SIZE_PERCENT, CDynamicSize::HT_SIZE_ABSOLUTE, {1, 24}})->commence();
+    if (m_impl->data.items.empty())
+        m_impl->data.currentItem = 0;
+    else
+        m_impl->data.currentItem = std::min(m_impl->data.currentItem, m_impl->data.items.size() - 1);
 
-    m_impl->layout->setPositionFlag(HT_POSITION_FLAG_CENTER, true);
-    m_impl->layout->setPositionMode(HT_POSITION_ABSOLUTE);
+    m_impl->layout = CRowLayoutBuilder::begin()->size({CDynamicSize::HT_SIZE_PERCENT, CDynamicSize::HT_SIZE_PERCENT, {1, 1}})->gap(INNER_MARG)->commence();
+
     m_impl->layout->setMargin(INNER_MARG);
 
     m_impl->label = CTextBuilder::begin()
-                        ->text(std::string{m_impl->data.items.at(m_impl->data.currentItem)})
+                        ->text(m_impl->data.items.empty() ? "" : std::string{m_impl->data.items.at(m_impl->data.currentItem)})
                         ->color([] { return g_palette->m_colors.text; })
                         ->callback([this] {
                             if (impl->window)
                                 impl->window->scheduleReposition(impl->self);
                         })
                         ->commence();
+
+    m_impl->label->setGrow(true);
 
     m_impl->background = CRectangleBuilder::begin()
                              ->color([] { return g_palette->m_colors.base; })
@@ -61,8 +67,6 @@ void CComboboxElement::init() {
                              ->size(CDynamicSize{CDynamicSize::HT_SIZE_PERCENT, CDynamicSize::HT_SIZE_PERCENT, {1.F, 1.F}})
                              ->commence();
 
-    m_impl->background->setPositionMode(HT_POSITION_ABSOLUTE);
-    m_impl->background->setPositionFlag(HT_POSITION_FLAG_CENTER, true);
     m_impl->background->impl->clipChildren = true;
 
     m_impl->handle = CDropdownHandleElement::create(SDropdownHandleData{
@@ -70,17 +74,8 @@ void CComboboxElement::init() {
         .color = [] { return g_palette->m_colors.text; },
     });
 
-    m_impl->leftPad   = CNullBuilder::begin()->size({CDynamicSize::HT_SIZE_ABSOLUTE, CDynamicSize::HT_SIZE_PERCENT, {INNER_MARG, 1.F}})->commence();
-    m_impl->rightPad  = CNullBuilder::begin()->size({CDynamicSize::HT_SIZE_ABSOLUTE, CDynamicSize::HT_SIZE_PERCENT, {INNER_MARG, 1.F}})->commence();
-    m_impl->middlePad = CNullBuilder::begin()->size({CDynamicSize::HT_SIZE_ABSOLUTE, CDynamicSize::HT_SIZE_PERCENT, {INNER_MARG, 1.F}})->commence();
-
-    m_impl->middlePad->setGrow(true);
-
-    m_impl->layout->addChild(m_impl->leftPad);
     m_impl->layout->addChild(m_impl->label);
-    m_impl->layout->addChild(m_impl->middlePad);
     m_impl->layout->addChild(m_impl->handle);
-    m_impl->layout->addChild(m_impl->rightPad);
 
     addChild(m_impl->background);
     addChild(m_impl->layout);
@@ -117,7 +112,7 @@ void CComboboxElement::init() {
 }
 
 void CComboboxElement::openDropdown() {
-    if (m_impl->dropdown.popup)
+    if (m_impl->dropdown.popup || m_impl->data.items.empty() || !impl->window)
         return;
 
     const Vector2D POPUP_SIZE = Vector2D{
@@ -133,6 +128,9 @@ void CComboboxElement::openDropdown() {
         .preferredSize = POPUP_SIZE,
         .pos           = impl->position.pos() - Vector2D{50.F, 0.F} + Vector2D{0.F, impl->position.size().y},
     });
+
+    if (!m_impl->dropdown.popup)
+        return;
 
     m_impl->listeners.popupClosed = m_impl->dropdown.popup->m_events.popupClosed.listen([this, self = m_impl->self] {
         if (!self)
@@ -170,16 +168,16 @@ void CComboboxElement::openDropdown() {
                                                   ->noBg(true)
                                                   ->alignText(HT_FONT_ALIGN_LEFT)
                                                   ->size({CDynamicSize::HT_SIZE_PERCENT, CDynamicSize::HT_SIZE_ABSOLUTE, {1.F, DROPDOWN_BUTTON_HEIGHT}})
-                                                  ->onMainClick([i, this, self = m_impl->self](SP<CButtonElement> e) {
-                                                      if (!self)
+                                                  ->onMainClick([i, this, self = m_impl->self, lifetime = WP<SBackendLifetime>{g_backendServices->lifetime}](SP<CButtonElement> e) {
+                                                      if (!self || !lifetime)
                                                           return;
 
                                                       setSelection(i);
                                                       if (m_impl->data.onChanged)
                                                           m_impl->data.onChanged(m_impl->self.lock(), i);
 
-                                                      g_backend->addIdle([this, self = m_impl->self] {
-                                                          if (!self)
+                                                      g_backend->addIdle([this, self = m_impl->self, lifetime] {
+                                                          if (!self || !lifetime)
                                                               return;
 
                                                           closeDropdown();
@@ -212,15 +210,27 @@ size_t CComboboxElement::current() {
 }
 
 void CComboboxElement::setCurrent(size_t current) {
-    m_impl->data.currentItem = std::min(current, m_impl->data.items.size() - 1);
+    if (m_impl->data.items.empty()) {
+        m_impl->data.currentItem = 0;
+        updateLabel("");
+        return;
+    }
 
-    m_impl->label
-        ->rebuild() //
-        ->text(std::string{m_impl->data.items.at(m_impl->data.currentItem)})
-        ->commence();
+    m_impl->data.currentItem = std::min(current, m_impl->data.items.size() - 1);
+    updateLabel(m_impl->data.items.at(m_impl->data.currentItem));
+}
+
+void CComboboxElement::updateLabel(const std::string& str) {
+    m_impl->label->rebuild()->text(std::string{str})->commence();
 }
 
 void CComboboxElement::replaceData(const SComboboxData& data) {
+    const bool ITEMS_CHANGED = m_impl->data.items != data.items;
+    if (ITEMS_CHANGED && m_impl->dropdown.popup) {
+        closeDropdown();
+        m_impl->dropdown = {};
+    }
+
     m_impl->data = data;
 
     setCurrent(data.currentItem);
@@ -251,16 +261,16 @@ Hyprutils::Math::Vector2D CComboboxElement::size() {
     return impl->position.size();
 }
 
-std::optional<Vector2D> CComboboxElement::preferredSize(const Hyprutils::Math::Vector2D& parent) {
-    return m_impl->data.size.calculate(parent);
+std::optional<Vector2D> CComboboxElement::preferredSize(const Hyprutils::Math::Vector2D& parent, bool grow) {
+    return impl->getPreferredSizeGeneric(m_impl->data.size, parent, grow);
 }
 
 std::optional<Vector2D> CComboboxElement::minimumSize(const Hyprutils::Math::Vector2D& parent) {
-    return m_impl->data.size.calculate(parent);
+    return impl->getPreferredSizeGeneric(m_impl->data.size, parent, false);
 }
 
 std::optional<Vector2D> CComboboxElement::maximumSize(const Hyprutils::Math::Vector2D& parent) {
-    return m_impl->data.size.calculate(parent);
+    return impl->getPreferredSizeGeneric(m_impl->data.size, parent, true);
 }
 
 bool CComboboxElement::acceptsMouseInput() {

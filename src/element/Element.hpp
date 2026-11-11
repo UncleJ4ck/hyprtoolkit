@@ -7,6 +7,7 @@
 
 #include "../helpers/Memory.hpp"
 #include "../core/Input.hpp"
+#include "../core/AnimatedVariable.hpp"
 
 #include <hyprutils/math/Box.hpp>
 
@@ -33,7 +34,18 @@ namespace Hyprtoolkit {
         bool                                                     growH                   = false;
         float                                                    margin                  = 0;
         bool                                                     userRequestedMouseInput = false;
+        bool                                                     userRequestedTouchInput = false;
         bool                                                     grouped                 = false;
+        bool                                                     hasBeenPresented        = false;
+
+        float                                                    opacity          = 1.F;
+        bool                                                     opacityAnimated  = false;
+        bool                                                     geometryAnimated = false;
+        PHLANIMVAR<float>                                        animatedOpacity;
+        PHLANIMVAR<Hyprutils::Math::CBox>                        animatedGeometry;
+        SP<Hyprutils::Animation::SAnimationPropertyConfig>       opacityAnimationConfig;
+        SP<Hyprutils::Animation::SAnimationPropertyConfig>       geometryAnimationConfig;
+        Hyprutils::Math::CBox                                    lastPresentationBounds;
 
         // tooltip
         std::string tooltip    = "";
@@ -53,6 +65,10 @@ namespace Hyprtoolkit {
             Hyprutils::Signal::CSignalT<>                          mouseLeave;
             Hyprutils::Signal::CSignalT<Input::eAxisAxis, float>   mouseAxis;
             Hyprutils::Signal::CSignalT<Input::SKeyboardKeyEvent>  key;
+            Hyprutils::Signal::CSignalT<Input::STouchEvent>        touchDown;
+            Hyprutils::Signal::CSignalT<Input::STouchEvent>        touchMotion;
+            Hyprutils::Signal::CSignalT<Input::STouchEvent>        touchUp;
+            Hyprutils::Signal::CSignalT<Input::STouchEvent>        touchCancel;
             Hyprutils::Signal::CSignalT<>                          keyboardEnter;
             Hyprutils::Signal::CSignalT<>                          keyboardLeave;
         } m_externalEvents;
@@ -63,6 +79,10 @@ namespace Hyprtoolkit {
             std::function<void(const Hyprutils::Math::Vector2D&)> mouseMove;
             std::function<void(Input::eMouseButton, bool)>        mouseButton;
             std::function<void(Input::eAxisAxis, float)>          mouseAxis;
+            std::function<void(const Input::STouchEvent&)>        touchDown;
+            std::function<void(const Input::STouchEvent&)>        touchMotion;
+            std::function<void(const Input::STouchEvent&)>        touchUp;
+            std::function<void(const Input::STouchEvent&)>        touchCancel;
             std::function<void()>                                 repositioned;
         } userFns;
 
@@ -71,10 +91,15 @@ namespace Hyprtoolkit {
         void                      breadthfirst(const std::function<void(SP<IElement>)>& fn);
         void                      setWindow(SP<IToolkitWindow> w);
         void                      damageEntire();
+        void                      damagePresentation();
         void                      setPosition(const Hyprutils::Math::CBox& box);
+        Hyprutils::Math::CBox     presentationBox(const Hyprutils::Math::CBox& box) const;
+        Hyprutils::Math::CBox     presentationSubtreeBox() const;
+        float                     effectiveOpacity() const;
+        bool                      hasActiveGeometry() const;
         void                      setFailedPositioning(bool set);
-        Hyprutils::Math::Vector2D maxChildSize(const Hyprutils::Math::Vector2D& parent);
-        Hyprutils::Math::Vector2D getPreferredSizeGeneric(const CDynamicSize& size, const Hyprutils::Math::Vector2D& parent);
+        Hyprutils::Math::Vector2D maxChildSize(const Hyprutils::Math::Vector2D& parent, bool grow);
+        Hyprutils::Math::Vector2D getPreferredSizeGeneric(const CDynamicSize& size, const Hyprutils::Math::Vector2D& parent, bool grow);
     };
 
 }

@@ -1,17 +1,19 @@
 #include "Icons.hpp"
 #include "../helpers/Memory.hpp"
 #include "../core/InternalBackend.hpp"
+#include "helpers/Env.hpp"
+#include "hyprtoolkit/core/LogTypes.hpp"
 
 #include <optional>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 
-#include <glib.h>
-
 #include <hyprutils/string/String.hpp>
 #include <hyprutils/string/ConstVarList.hpp>
+#include <hyprutils/string/VarList2.hpp>
 #include <hyprutils/utils/ScopeGuard.hpp>
+#include <ranges>
 
 extern "C" {
 #include "iniparser.h"
@@ -34,30 +36,27 @@ static std::optional<std::string> readFileAsString(const std::string& path) {
     return trim(std::string((std::istreambuf_iterator<char>(file)), (std::istreambuf_iterator<char>())));
 }
 
-static std::vector<std::string> getIconSearchPaths() {
-  std::vector<std::string> paths;
+static std::vector<std::string> getXDGIconThemeDirsFromEnv() {
+    auto dataDirs    = Env::getEnv("XDG_DATA_DIRS").value_or("/usr/local/share/:/usr/share/");
+    auto dataHomeDir = std::string(Env::getEnv("XDG_DATA_HOME").value_or("~/.local/share/"));
 
-  // user icons (e.g., ~/.local/share/icons)
-  const gchar* userDataDir = g_get_user_data_dir();
-  if (userDataDir) {
-    paths.push_back(std::string(userDataDir) + "/icons");
-  }
+    auto dirs = dataDirs | std::views::split(':') | std::ranges::to<std::vector<std::string>>();
 
-  // system icons (e.g. /usr/local/share/icons, /usr/share/icons)
-  const gchar* const* systemDataDirs = g_get_system_data_dirs();
-  for (int i = 0; systemDataDirs[i] != nullptr; i++) {
-    paths.push_back(std::string(systemDataDirs[i]) + "/icons");
-  }
+    dirs.insert(dirs.begin(), dataHomeDir);
 
-  //non-xdg compliant icon dirs
-  paths.push_back("~/.icons");
+    for (auto& dir : dirs) {
+        dir.append("/icons");
+    }
 
-  return paths;
+    return dirs;
 }
 
-static const auto ICON_THEME_DIRS = getIconSearchPaths();
+static std::vector<std::string> getXDGIconThemeDirs() {
+    static const std::vector<std::string> ICON_THEME_DIRS = getXDGIconThemeDirsFromEnv();
+    return ICON_THEME_DIRS;
+}
 
-static std::string                      fromDir(const std::string& p) {
+static std::string fromDir(const char* p) {
     static auto HOME_ENV = getenv("HOME");
 
     if (p[0] == '~') {
@@ -72,9 +71,11 @@ static std::string                      fromDir(const std::string& p) {
     return p;
 }
 
-static std::optional<std::string> getThemeDir(const std::string& name) {
-    for (const auto& rawDir : ICON_THEME_DIRS) {
-        auto            path = fromDir(rawDir) + "/" + name;
+static std::optional<std::vector<std::string>> getThemeDir(const std::string& name) {
+    std::vector<std::string> results;
+
+    for (const auto& rawDir : getXDGIconThemeDirs()) {
+        auto            path = fromDir(rawDir.c_str()) + "/" + name;
 
         std::error_code ec;
         if (!std::filesystem::exists(path + "/index.theme", ec) || ec) {
@@ -82,16 +83,16 @@ static std::optional<std::string> getThemeDir(const std::string& name) {
             continue;
         }
 
-        return path;
+        results.emplace_back(path);
     }
 
-    return std::nullopt;
+    return results.empty() ? std::nullopt : std::optional<std::vector<std::string>>(results);
 }
 
-static std::optional<std::string> findAnyTheme() {
+static std::optional<std::vector<std::string>> findAnyTheme() {
     // first, try to find the default system theme
-    for (const auto& rawDir : ICON_THEME_DIRS) {
-        auto            path = fromDir(rawDir) + "/default/index.theme";
+    for (const auto& rawDir : getXDGIconThemeDirs()) {
+        auto            path = fromDir(rawDir.c_str()) + "/default/index.theme";
 
         std::error_code ec;
         if (!std::filesystem::exists(path) || ec) {
@@ -129,8 +130,8 @@ static std::optional<std::string> findAnyTheme() {
             g_logger->log(HT_LOG_TRACE, "CSystemIconFactory: Skipping {}, doesn't inherit an icon theme", path);
     }
 
-    for (const auto& rawDir : ICON_THEME_DIRS) {
-        auto            path = fromDir(rawDir) + "/";
+    for (const auto& rawDir : getXDGIconThemeDirs()) {
+        auto            path = fromDir(rawDir.c_str()) + "/";
 
         std::error_code ec;
         if (!std::filesystem::exists(path) || ec) {
@@ -143,53 +144,57 @@ static std::optional<std::string> findAnyTheme() {
             continue;
         }
 
+        std::vector<std::string> themeDirs;
+
         for (const auto& p : std::filesystem::directory_iterator(path)) {
             if (!std::filesystem::exists(p.path().string() + "/index.theme", ec) || ec) {
                 g_logger->log(HT_LOG_TRACE, "CSystemIconFactory: skipping theme dir {} (no index.theme)", p.path().string());
                 continue;
             }
 
-            return path;
+            themeDirs.emplace_back(p.path().string());
         }
+
+        if (!themeDirs.empty())
+            return themeDirs;
     }
 
     return std::nullopt;
 }
 
-static std::optional<std::string> getIconThemeDir() {
-    static std::optional<std::string> path;
-    static bool                       once = true;
+static std::optional<std::vector<std::string>> getIconThemeDirs() {
+    static std::optional<std::vector<std::string>> paths;
+    static bool                                    once = true;
 
     if (!once)
-        return path;
+        return paths;
 
     once = false;
 
     // if we have an explicit one, try to find it.
     if (!g_palette->m_vars.iconTheme.empty())
-        path = getThemeDir(g_palette->m_vars.iconTheme);
+        paths = getThemeDir(g_palette->m_vars.iconTheme);
 
-    if (path) {
-        g_logger->log(HT_LOG_TRACE, "CSystemIconFactory: Using theme dir {}, explicit by user", *path);
-        return path;
+    if (paths) {
+        g_logger->log(HT_LOG_TRACE, "CSystemIconFactory: Using theme dirs set explicitly by the user");
+        return paths;
     }
 
     // we haven't found one, or it's unset. Use the first one we can.
-    path = findAnyTheme();
-    if (path)
-        g_logger->log(HT_LOG_TRACE, "CSystemIconFactory: Using theme dir {} (default fallback)", *path);
-    else
-        g_logger->log(HT_LOG_ERROR, "CSystemIconFactory: No theme found, icons will be broken");
+    paths = findAnyTheme();
 
-    return path;
+    g_logger->log(HT_LOG_TRACE, "CSystemIconFactory: getIconThemeDirs returning {} base dirs", paths ? paths->size() : 0);
+
+    return paths;
 }
 
-CSystemIconFactory::CSystemIconFactory() : m_themeDir(getIconThemeDir()) {
-    // Parse the index.theme if applicable and find Directories
-    if (!m_themeDir)
+void CSystemIconFactory::parseTheme(const std::string& themeDir) {
+    if (!m_parsedThemes.insert(themeDir).second) {
+        g_logger->log(HT_LOG_TRACE, "CSystemIconFactory: theme {} already parsed, skipping", themeDir);
         return;
+    }
 
-    const auto THEME_DATA = readFileAsString(*m_themeDir + "/index.theme");
+    const auto THEME_DATA = readFileAsString(themeDir + "/index.theme");
 
     if (!THEME_DATA)
         return;
@@ -198,30 +203,88 @@ CSystemIconFactory::CSystemIconFactory() : m_themeDir(getIconThemeDir()) {
     if (directoriesEntry == std::string::npos)
         directoriesEntry = THEME_DATA->find("\nDirectories =");
 
-    if (directoriesEntry == std::string::npos) {
-        g_logger->log(HT_LOG_ERROR, "CSystemIconFactory: index.theme has no Directories?");
+    if (directoriesEntry != std::string::npos) {
+        const auto BASE_PATH = std::filesystem::path{themeDir};
+
+        size_t     directoriesLineEnd = THEME_DATA->find('\n', directoriesEntry + 2);
+        directoriesEntry              = THEME_DATA->find('=', directoriesEntry + 2) + 1;
+
+        std::string   directoriesList = THEME_DATA->substr(directoriesEntry, directoriesLineEnd - directoriesEntry);
+
+        CConstVarList dirs(directoriesList, 0, ',', true);
+
+        for (const auto& d : dirs) {
+            m_lookupPaths.emplace_back(BASE_PATH / d);
+        }
+
+        g_logger->log(HT_LOG_TRACE, "CSystemIconFactory: theme {} has {} dirs", themeDir, dirs.size());
+    }
+
+    size_t inheritsEntry = THEME_DATA->find("\nInherits=");
+    if (inheritsEntry == std::string::npos)
+        inheritsEntry = THEME_DATA->find("\nInherits =");
+
+    if (inheritsEntry != std::string::npos) {
+        size_t inheritsLineEnd = THEME_DATA->find('\n', inheritsEntry + 2);
+        inheritsEntry          = THEME_DATA->find('=', inheritsEntry + 2) + 1;
+
+        std::string inheritsList = THEME_DATA->substr(inheritsEntry, inheritsLineEnd - inheritsEntry);
+
+        CVarList2   inherits(std::move(inheritsList), 0, ',', true);
+
+        g_logger->log(HT_LOG_TRACE, "CSystemIconFactory: theme {} inherits {} themes", themeDir, inherits.size());
+
+        for (const auto& inheritName : inherits) {
+            if (inheritName == "hicolor")
+                m_hicolorAdded = true;
+
+            auto inheritTheme = getThemeDir(trim(std::string{inheritName}));
+            if (inheritTheme) {
+                g_logger->log(HT_LOG_TRACE, "CSystemIconFactory: parsing inherited theme {}", *inheritTheme);
+                parseThemes(*inheritTheme);
+            } else
+                g_logger->log(HT_LOG_WARNING, "CSystemIconFactory: inherited theme {} not found", std::string{inheritName});
+        }
+    }
+}
+
+void CSystemIconFactory::parseThemes(const std::vector<std::string>& themeDirs) {
+    for (const auto& td : themeDirs) {
+        parseTheme(td);
+    }
+}
+
+CSystemIconFactory::CSystemIconFactory() {
+    auto baseThemeDir = getIconThemeDirs();
+
+    if (!baseThemeDir)
         return;
+
+    parseThemes(baseThemeDir.value());
+
+    if (!m_hicolorAdded) {
+        const auto DIRS = getThemeDir("hicolor");
+        if (DIRS)
+            parseThemes(*DIRS);
     }
 
-    size_t directoriesLineEnd = THEME_DATA->find('\n', directoriesEntry + 2);
-    directoriesEntry          = THEME_DATA->find('=', directoriesEntry + 2) + 1;
-
-    std::string   directoriesList = THEME_DATA->substr(directoriesEntry, directoriesLineEnd - directoriesEntry);
-
-    CConstVarList dirs(directoriesList, 0, ',', true);
-
-    m_iconDirs.reserve(dirs.size());
-
-    for (const auto& d : dirs) {
-        m_iconDirs.emplace_back(trim(std::string{d}));
-    }
-
-    g_logger->log(HT_LOG_TRACE, "CSystemIconFactory: index.theme parsed: {} dirs", dirs.size());
+    g_logger->log(HT_LOG_TRACE, "CSystemIconFactory: initialized with {} lookup paths", m_lookupPaths.size());
 }
 
 SP<ISystemIconDescription> CSystemIconFactory::lookupIcon(const std::string& iconName) {
-    if (!m_themeDir)
+    if (m_lookupPaths.empty())
         return makeShared<CSystemIconDescription>();
 
     return makeShared<CSystemIconDescription>(iconName);
+}
+
+void CSystemIconFactory::cacheEntry(const std::string& iconName, SIconCacheResult&& result) {
+    m_pathCache[iconName] = std::move(result);
+}
+
+std::optional<CSystemIconFactory::SIconCacheResult> CSystemIconFactory::getCached(const std::string& name) {
+    auto x = m_pathCache.find(name);
+    if (x == m_pathCache.end())
+        return std::nullopt;
+    return x->second;
 }

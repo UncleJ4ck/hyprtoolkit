@@ -10,28 +10,57 @@ CSystemIconDescription::CSystemIconDescription() {
 }
 
 CSystemIconDescription::CSystemIconDescription(const std::string& name) {
-    if (g_iconFactory->m_iconDirs.empty())
+    if (g_iconFactory->m_lookupPaths.empty() || name.empty())
         return;
 
-    const auto THEME_DIR = g_iconFactory->m_themeDir.value();
+    if (const auto CK = g_iconFactory->getCached(name); CK) {
+        m_bestPath = CK->badIcon ? "" : CK->path;
+        m_scalable = CK->badIcon ? false : CK->scalable;
+        return;
+    }
 
-    for (const auto& sd : g_iconFactory->m_iconDirs) {
-        auto fullDirPath = THEME_DIR + "/";
-        fullDirPath += sd;
+    bool found = false;
 
+    for (const auto& lookupDir : g_iconFactory->m_lookupPaths) {
+        std::filesystem::path fullDirPath = lookupDir + "/";
+
+        auto                  iconPath = fullDirPath / (name + ".svg");
+        m_scalable                     = true;
         std::error_code ec;
-        if (!std::filesystem::exists(fullDirPath, ec) || ec)
-            continue;
 
-        auto iconPath = fullDirPath + "/";
-        iconPath += name + ".svg"; // FUCK them raster themes in the year of our Lord 2025
+        if (!std::filesystem::exists(iconPath, ec) || ec) {
+            iconPath   = fullDirPath / (name + ".png");
+            m_scalable = false;
+        }
 
         if (!std::filesystem::exists(iconPath, ec) || ec)
             continue;
 
         m_bestPath = iconPath;
+        found      = true;
         break;
     }
+
+    if (!found) {
+        // try /usr/share/pixmaps
+        std::error_code ec;
+        if (std::filesystem::exists("/usr/share/pixmaps/" + name + ".svg", ec) && !ec) {
+            found      = true;
+            m_scalable = true;
+            m_bestPath = "/usr/share/pixmaps/" + name + ".svg";
+        }
+
+        if (!found && std::filesystem::exists("/usr/share/pixmaps/" + name + ".png", ec) && !ec) {
+            found      = true;
+            m_scalable = false;
+            m_bestPath = "/usr/share/pixmaps/" + name + ".png";
+        }
+    }
+
+    if (found)
+        g_iconFactory->cacheEntry(name, CSystemIconFactory::SIconCacheResult{.badIcon = false, .path = m_bestPath, .scalable = m_scalable});
+    else
+        g_iconFactory->cacheEntry(name, CSystemIconFactory::SIconCacheResult{});
 }
 
 bool CSystemIconDescription::exists() {

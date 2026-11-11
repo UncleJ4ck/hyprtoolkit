@@ -1,5 +1,7 @@
 #include "Positioner.hpp"
 
+#include <cmath>
+
 #include "../element/Element.hpp"
 #include "../window/ToolkitWindow.hpp"
 
@@ -11,8 +13,10 @@ void CPositioner::position(SP<IElement> element, const CBox& box, const Hyprutil
     initElementIfNeeded(element);
 
     // damage old box
-    if (element->impl->window)
+    if (element->impl->window) {
+        element->impl->window->m_opaqueRegionDirty = true;
         element->impl->window->damage(element->impl->positionerData->baseBox);
+    }
 
     element->impl->positionerData->baseBox = box;
     element->reposition(box, maxSize);
@@ -24,6 +28,7 @@ void CPositioner::position(SP<IElement> element, const CBox& box, const Hyprutil
 void CPositioner::positionChildren(SP<IElement> element, const SRepositionData& data) {
     const auto C   = element->impl->children;
     const auto BOX = element->impl->position.copy().translate(data.offset);
+    const auto CLIP_BOX = CBox{BOX.pos(), {data.growX ? 99999999 : BOX.width, data.growY ? 99999999 : BOX.height}};
 
     // position children according to how they wanna be positioned
 
@@ -32,18 +37,12 @@ void CPositioner::positionChildren(SP<IElement> element, const SRepositionData& 
 
         if (!itemSize) {
             // no size to base off of, just position
-            CBox itemBox = BOX;
-            if (data.growX)
-                itemBox.w = 99999999;
-            if (data.growY)
-                itemBox.h = 99999999;
-
-            position(c, itemBox);
+            position(c, CLIP_BOX);
             continue;
         }
 
         // it has a size, let's see what it wants.
-        CBox itemBox = {BOX.pos(), *itemSize};
+        CBox itemBox = CBox{BOX.pos(), *itemSize}.intersection(CLIP_BOX);
 
         if (c->impl->positionMode == IElement::HT_POSITION_ABSOLUTE) {
 
@@ -63,9 +62,9 @@ void CPositioner::positionChildren(SP<IElement> element, const SRepositionData& 
             }
 
             if (c->impl->positionFlags & IElement::HT_POSITION_FLAG_HCENTER)
-                itemBox.translate(Vector2D{((BOX.size() - itemBox.size()) / 2.F).x, 0.F});
+                itemBox.translate(Vector2D{std::round(((BOX.size() - itemBox.size()) / 2.F).x), 0.F});
             if (c->impl->positionFlags & IElement::HT_POSITION_FLAG_VCENTER)
-                itemBox.translate(Vector2D{0.F, ((BOX.size() - itemBox.size()) / 2.F).y});
+                itemBox.translate(Vector2D{0.F, std::round(((BOX.size() - itemBox.size()) / 2.F).y)});
 
             itemBox.translate(c->impl->absoluteOffset);
         }

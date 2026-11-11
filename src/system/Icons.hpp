@@ -2,8 +2,12 @@
 
 #include <hyprtoolkit/system/Icons.hpp>
 
+#include <absl/container/flat_hash_map.h>
+
 #include <optional>
+#include <filesystem>
 #include <vector>
+#include <unordered_set>
 
 namespace Hyprtoolkit {
     class CSystemIconDescription : public ISystemIconDescription {
@@ -26,15 +30,36 @@ namespace Hyprtoolkit {
         CSystemIconFactory();
         virtual ~CSystemIconFactory() = default;
 
+        struct SIconCacheResult {
+            bool                  badIcon = true;
+            std::filesystem::path path;
+            bool                  scalable = false;
+        };
+
         /*
             Lookup an icon. If the icon is found, will return associated data.
             This object can be used to create an ImageElement
         */
         virtual Hyprutils::Memory::CSharedPointer<ISystemIconDescription> lookupIcon(const std::string& iconName);
 
+        /*
+            A cache is kept: loopkup paths can grow large, this is to avoid tons of disk I/O
+        */
+        void                            cacheEntry(const std::string& iconName, SIconCacheResult&& result);
+        std::optional<SIconCacheResult> getCached(const std::string& name);
+
+        bool                            m_hicolorAdded = false;
+
       private:
-        std::optional<std::string> m_themeDir;
-        std::vector<std::string>   m_iconDirs;
+        void                     parseThemes(const std::vector<std::string>& themeDirs);
+        void                     parseTheme(const std::string& themeDir);
+
+        std::vector<std::string> m_lookupPaths;
+
+        // theme dirs already walked, to break cyclic Inherits= chains
+        std::unordered_set<std::string>                    m_parsedThemes;
+
+        absl::flat_hash_map<std::string, SIconCacheResult> m_pathCache;
 
         friend class CSystemIconDescription;
     };

@@ -22,6 +22,7 @@ SP<CSliderElement> CSliderElement::create(const SSliderData& data) {
 
 CSliderElement::CSliderElement(const SSliderData& data) : IElement(), m_impl(makeUnique<SSliderImpl>()) {
     m_impl->data = data;
+    m_impl->normalizeValue();
 
     m_impl->layout = CRowLayoutBuilder::begin()->gap(3)->size({CDynamicSize::HT_SIZE_PERCENT, CDynamicSize::HT_SIZE_PERCENT, {1, 1}})->commence();
 
@@ -48,22 +49,24 @@ CSliderElement::CSliderElement(const SSliderData& data) : IElement(), m_impl(mak
                              ->rounding(g_palette->m_vars.smallRounding)
                              ->borderColor([] { return g_palette->m_colors.alternateBase; })
                              ->borderThickness(1)
-                             ->size(CDynamicSize{CDynamicSize::HT_SIZE_PERCENT, CDynamicSize::HT_SIZE_PERCENT, {1.F, 1.F}})
+                             ->size(CDynamicSize{CDynamicSize::HT_SIZE_AUTO, CDynamicSize::HT_SIZE_PERCENT, {1.F, 1.F}})
                              ->commence();
 
     m_impl->background->setPositionMode(HT_POSITION_ABSOLUTE);
     m_impl->background->setPositionFlag(HT_POSITION_FLAG_CENTER, true);
+    m_impl->background->setGrow(true);
 
     m_impl->foreground = CRectangleBuilder::begin()
                              ->color([] { return g_palette->m_colors.accent; })
                              ->rounding(g_palette->m_vars.smallRounding)
-                             ->size({CDynamicSize::HT_SIZE_PERCENT, CDynamicSize::HT_SIZE_PERCENT, {(m_impl->data.current / m_impl->data.max), 1.F}})
+                             ->size({CDynamicSize::HT_SIZE_PERCENT, CDynamicSize::HT_SIZE_PERCENT, {m_impl->percentage(), 1.F}})
                              ->commence();
 
     m_impl->background->addChild(m_impl->foreground);
 
     m_impl->layout->addChild(m_impl->background);
-    m_impl->layout->addChild(m_impl->textContainer);
+    if (m_impl->data.showLabel)
+        m_impl->layout->addChild(m_impl->textContainer);
 
     addChild(m_impl->layout);
 
@@ -98,28 +101,47 @@ CSliderElement::CSliderElement(const SSliderData& data) : IElement(), m_impl(mak
     impl->grouped = true;
 }
 
-void SSliderImpl::valueChanged(float perc) {
-    data.current = data.max * perc;
-    foreground->rebuild()->size({CDynamicSize::HT_SIZE_PERCENT, CDynamicSize::HT_SIZE_PERCENT, {(data.current / data.max), 1.F}})->commence();
+void SSliderImpl::setPercentage(float percentage) {
+    percentage   = std::clamp(percentage, 0.F, 1.F);
+    data.current = data.max <= data.min ? data.min : data.min + (data.max - data.min) * percentage;
+    refreshValue();
+}
+
+void SSliderImpl::refreshValue() {
+    foreground->rebuild()->size({CDynamicSize::HT_SIZE_PERCENT, CDynamicSize::HT_SIZE_PERCENT, {percentage(), 1.F}})->commence();
 
     textContainer->rebuild()->size({CDynamicSize::HT_SIZE_ABSOLUTE, CDynamicSize::HT_SIZE_PERCENT, {maxLabelSize(), 1.F}})->commence();
 
     valueText->rebuild()->text(valueAsText())->commence();
 }
 
+void SSliderImpl::normalizeValue() {
+    if (data.max <= data.min) {
+        data.current = data.min;
+        return;
+    }
+
+    data.current = std::clamp(data.current, data.min, data.max);
+}
+
+float SSliderImpl::percentage() const {
+    if (data.max <= data.min)
+        return 0.F;
+
+    return std::clamp((data.current - data.min) / (data.max - data.min), 0.F, 1.F);
+}
+
 void SSliderImpl::updateValue() {
-    CBox box = background->impl->position;
-    // expand grab area for the user.
-    box.h += 10;
-    box.y -= 5;
+    if (background->impl->position.w <= 0.F)
+        return;
 
-    const float CURRENT_VALUE =
-        std::clamp(sc<float>(((lastPosLocal + background->impl->position.pos()).x - background->impl->position.pos().x) / background->impl->position.size().x), 0.F, 1.F);
+    const float POINTER_X  = self->impl->position.x + lastPosLocal.x;
+    const float PERCENTAGE = std::clamp(sc<float>((POINTER_X - background->impl->position.x) / background->impl->position.w), 0.F, 1.F);
 
-    valueChanged(CURRENT_VALUE);
+    setPercentage(PERCENTAGE);
 
     if (data.onChanged)
-        data.onChanged(self.lock(), CURRENT_VALUE);
+        data.onChanged(self.lock(), data.current);
 }
 
 void CSliderElement::paint() {
@@ -145,27 +167,38 @@ SP<CSliderBuilder> CSliderElement::rebuild() {
 }
 
 void CSliderElement::replaceData(const SSliderData& data) {
-    const bool VALUE_CHANGED = data.current != m_impl->data.current;
+    const float PREVIOUS_VALUE = m_impl->data.current;
 
     m_impl->data = data;
+    m_impl->normalizeValue();
+    m_impl->refreshValue();
 
-    if (VALUE_CHANGED) {
-        m_impl->valueChanged(data.current);
-
+    if (m_impl->data.current != PREVIOUS_VALUE) {
         if (data.onChanged)
             data.onChanged(m_impl->self.lock(), m_impl->data.current);
     }
+
+    if (m_impl->data.showLabel)
+        m_impl->layout->addChild(m_impl->textContainer);
+    else
+        m_impl->layout->removeChild(m_impl->textContainer);
 
     if (impl->window)
         impl->window->scheduleReposition(impl->self);
 }
 
 float SSliderImpl::maxLabelSize() {
-    // TODO: maybe actually calculate it or something?
-    size_t maxChars = std::floor(std::log10(data.max));
+    // approximate width: count digits of the widest endpoint, add room for
+    // a sign / fractional suffix. still a heuristic (no pango pass), but at
+    // least correct for the common cases. avoids log10(<=0) UB.
+    const float absMax   = std::max(std::fabs(data.min), std::fabs(data.max));
+    size_t      maxChars = absMax > 1.F ? sc<size_t>(std::floor(std::log10(absMax))) + 1 : 1;
+
+    if (data.min < 0.F)
+        maxChars += 1; // minus sign
 
     if (!data.snapInt)
-        maxChars += 2;
+        maxChars += 2; // ".X" suffix from std::format("{:.1f}", ...)
 
     return maxChars * 10.F;
 }
@@ -181,50 +214,16 @@ Hyprutils::Math::Vector2D CSliderElement::size() {
     return impl->position.size();
 }
 
-std::optional<Vector2D> CSliderElement::preferredSize(const Hyprutils::Math::Vector2D& parent) {
-    auto s = m_impl->data.size.calculate(parent);
-
-    if (s.x != -1 && s.y != -1)
-        return s;
-
-    const auto CALC = m_impl->layout->preferredSize(parent).value() + Vector2D{1, 1};
-
-    if (s.x == -1)
-        s.x = CALC.x;
-    if (s.y == -1)
-        s.y = CALC.y;
-
-    return s;
+std::optional<Vector2D> CSliderElement::preferredSize(const Hyprutils::Math::Vector2D& parent, bool grow) {
+    return impl->getPreferredSizeGeneric(m_impl->data.size, parent, grow);
 }
 
 std::optional<Vector2D> CSliderElement::minimumSize(const Hyprutils::Math::Vector2D& parent) {
-    auto s = m_impl->data.size.calculate(parent);
-    if (s.x != -1 && s.y != -1)
-        return s;
-
-    const auto CALC = m_impl->layout->preferredSize(parent).value() + Vector2D{1, 1};
-
-    if (s.x == -1)
-        s.x = CALC.x;
-    if (s.y == -1)
-        s.y = CALC.y;
-
-    return s;
+    return impl->getPreferredSizeGeneric(m_impl->data.size, parent, false);
 }
 
 std::optional<Vector2D> CSliderElement::maximumSize(const Hyprutils::Math::Vector2D& parent) {
-    auto s = m_impl->data.size.calculate(parent);
-    if (s.x != -1 && s.y != -1)
-        return s;
-
-    const auto CALC = m_impl->layout->preferredSize(parent).value() + Vector2D{1, 1};
-
-    if (s.x == -1)
-        s.x = CALC.x;
-    if (s.y == -1)
-        s.y = CALC.y;
-
-    return s;
+    return impl->getPreferredSizeGeneric(m_impl->data.size, parent, true);
 }
 
 bool CSliderElement::acceptsMouseInput() {

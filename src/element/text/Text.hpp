@@ -9,6 +9,7 @@
 
 #include "../../helpers/Memory.hpp"
 #include "../../core/InternalBackend.hpp"
+#include "../../core/AnimatedVariable.hpp"
 
 namespace Hyprtoolkit {
     struct STextData {
@@ -16,43 +17,85 @@ namespace Hyprtoolkit {
         std::string                              fontFamily = g_palette ? g_palette->m_vars.fontFamily : "Sans Serif";
         CFontSize                                fontSize{CFontSize::HT_FONT_TEXT};
         eFontAlignment                           align       = HT_FONT_ALIGN_LEFT;
-        colorFn                                  color       = [] { return g_backend->getPalette()->m_colors.text; };
+        colorFn                                  color       = [] { return g_palette->m_colors.text; };
         float                                    a           = 1.F;
         bool                                     noEllipsize = false;
         std::optional<Hyprutils::Math::Vector2D> clampSize;
-        CDynamicSize                             size{CDynamicSize::HT_SIZE_PERCENT, CDynamicSize::HT_SIZE_PERCENT, {1, 1}};
+        CDynamicSize                             size{CDynamicSize::HT_SIZE_AUTO, CDynamicSize::HT_SIZE_AUTO, {1, 1}};
         std::function<void()>                    callback; // called after resource is loaded
         bool                                     async = true;
+        std::optional<bool>                      interactable;
+    };
+
+    struct STextLink {
+        uint64_t                 begin = 0, end = 0;
+        std::string              link;
+        Hyprutils::Math::CRegion region;
+    };
+
+    struct SPangoData {
+        PangoLayout*  layout;
+        PangoContext* context;
+
+        SPangoData();
+        SPangoData(PangoLayout* layout, PangoContext* context);
+        SPangoData(const SPangoData&) = delete;
+        SPangoData(SPangoData&&) noexcept;
+        SPangoData& operator=(const SPangoData&) = delete;
+        SPangoData& operator=(SPangoData&&) noexcept;
+
+        void        ref() const;
+        void        unref() const;
+
+        ~SPangoData();
     };
 
     struct STextImpl {
         STextData                                                                                      data;
 
+        std::string                                                                                    parsedText;
+        std::vector<STextLink>                                                                         parsedLinks;
+        STextLink*                                                                                     hoveredTextLink = nullptr;
+
         WP<CTextElement>                                                                               self;
 
-        size_t                                                                                         lastFontSizeUnscaled = 0;
-        float                                                                                          lastScale            = 1.F;
+        float                                                                                          lastScale       = 1.F;
         bool                                                                                           needsTexRefresh = false, newTex = false;
 
-        Hyprutils::Math::Vector2D                                                                      lastMaxSize;
+        SPangoData                                                                                     pangoData;
 
         SP<IRendererTexture>                                                                           tex;
         SP<IRendererTexture>                                                                           oldTex; // while loading a new one
+        PHLANIMVAR<CHyprColor>                                                                         color;
+        SP<Hyprutils::Animation::SAnimationPropertyConfig>                                             colorAnimationConfig;
         ASP<Hyprgraphics::CTextResource>                                                               resource;
-        Hyprutils::Math::Vector2D                                                                      size, preferred;
+        Hyprutils::Math::Vector2D                                                                      size;
 
-        bool                                                                                           waitingForTex = false;
+        Hyprutils::Math::Vector2D                                                                      lastCursorPos;
 
-        Hyprutils::Math::Vector2D                                                                      getTextSizePreferred();
-        Hyprutils::Math::CBox                                                                          getCharBox(size_t charIdxUTF8);
-        std::optional<size_t>                                                                          vecToCharIdx(const Hyprutils::Math::Vector2D& vec); // utf8
-        float                                                                                          getCursorPos(size_t charIdx);
+        bool                                                                                           waitingForTex         = false;
+        bool                                                                                           colorAnimationEnabled = false;
+        bool                                                                                           renderColorAtPaint    = false;
+
+        Hyprutils::Math::CBox                                                                          getCharBox(size_t offset);
+        std::optional<size_t>                                                                          vecToOffset(const Hyprutils::Math::Vector2D& vec);
+        float                                                                                          getCursorPos(size_t offset);
         float                                                                                          getCursorPos(const Hyprutils::Math::Vector2D& click);
         Hyprutils::Math::Vector2D                                                                      unscale(const Hyprutils::Math::Vector2D& x);
-        std::tuple<UP<Hyprgraphics::CCairoSurface>, cairo_t*, PangoLayout*, Hyprutils::Math::Vector2D> prepPangoLayout();
+        void                                                                                           setPangoData();
+        void                                                                                           setPangoFont();
+        void                                                                                           setPangoAlign();
+        void                                                                                           setPangoText();
+        void                                                                                           setPangoEllipsize();
+        void                                                                                           updateScale();
         void                                                                                           scheduleTexRefresh();
         void                                                                                           renderTex();
         void                                                                                           postTexLoad();
+        void                                                                                           parseText();
+        void                                                                                           recheckTextBoxes();
+        void                                                                                           onMouseDown();
+        void                                                                                           onMouseMove();
+        Hyprutils::Math::Vector2D                                                                      applyClampSize(Hyprutils::Math::Vector2D);
 
         friend class CTextboxElement;
         friend struct STextboxImpl;

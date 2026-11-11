@@ -6,6 +6,7 @@
 #include "../element/Element.hpp"
 #include "../core/platforms/WaylandPlatform.hpp"
 #include "../core/InternalBackend.hpp"
+#include "../core/BackendContext.hpp"
 #include "../renderer/Renderer.hpp"
 #include "../renderer/sync/SyncTimeline.hpp"
 #include "../core/AnimationManager.hpp"
@@ -53,6 +54,8 @@ void IWaylandWindow::onScaleUpdate() {
 }
 
 void IWaylandWindow::configure(const Vector2D& size, uint32_t serial) {
+    if (size.x < 1 || size.y < 1)
+        return;
 
     m_waylandState.logicalSize  = size;
     m_waylandState.appliedScale = m_fractionalScale;
@@ -71,7 +74,7 @@ void IWaylandWindow::resizeSwapchain(const Vector2D& pixelSize) {
     m_damageRing.setSize(pixelSize);
 
     if (!m_waylandState.swapchain)
-        m_waylandState.swapchain = Aquamarine::CSwapchain::create(g_waylandPlatform->m_allocator, g_backend->m_aqBackend->getImplementations().at(0));
+        m_waylandState.swapchain = Aquamarine::CSwapchain::create(g_waylandPlatform->m_allocator, g_waylandBackend->m_aqBackend->getImplementations().at(0));
 
     m_waylandState.swapchain->reconfigure(Aquamarine::SSwapchainOptions{
         .length = 2,
@@ -85,31 +88,28 @@ void IWaylandWindow::resizeSwapchain(const Vector2D& pixelSize) {
 }
 
 void IWaylandWindow::onPreRender() {
-
-    const bool ANY_REPOSITION = !m_needsReposition.empty();
-
     IToolkitWindow::onPreRender();
 
     if (!m_waylandState.wlBuffers[0] || !m_waylandState.wlBuffers[1])
         return;
 
-    if (!ANY_REPOSITION)
+    if (!m_opaqueRegionDirty)
         return;
+    m_opaqueRegionDirty = false;
 
-    // recheck opaque region
-    // TODO: maybe traverse the entire tree?
-
-    CRegion rg;
-    for (const auto& ch : m_rootElement->impl->children) {
-        auto opaque = ch->opaqueBox();
-
-        if (opaque.empty())
-            continue;
-
-        opaque.translate(ch->impl->position.pos());
-
-        rg.add(opaque);
-    }
+    // collect opaque rects across the full element tree, not just direct children
+    CRegion                                  rg;
+    std::function<void(const SP<IElement>&)> walk = [&](const SP<IElement>& el) {
+        for (const auto& ch : el->impl->children) {
+            auto opaque = ch->opaqueBox();
+            if (!opaque.empty()) {
+                opaque.translate(ch->impl->position.pos());
+                rg.add(opaque);
+            }
+            walk(ch);
+        }
+    };
+    walk(m_rootElement);
 
     m_waylandState.lastOpaqueRegion = std::move(rg);
 
@@ -127,9 +127,14 @@ void IWaylandWindow::prepareExplicit(SP<CWaylandBuffer> buffer) {
         return;
 
     if (!m_waylandState.syncobjSurf)
-        m_waylandState.syncobjSurf = makeShared<CCWpLinuxDrmSyncobjSurfaceV1>(g_waylandPlatform->m_waylandState.syncobj->sendGetSurface(m_waylandState.surface->proxy()));
+        m_waylandState.syncobjSurf = makeShared<CCWpLinuxDrmSyncobjSurfaceV1>(g_waylandPlatform->m_waylandState.syncobj->sendGetSurface(m_waylandState.surface->resource()));
 
     auto sync = g_renderer->exportSync(buffer->m_buffer.lock());
+
+    if (!sync) {
+        g_logger->log(HT_LOG_ERROR, "wayland: failed to export sync timeline in prepareExplicit");
+        return;
+    }
 
     if (!buffer->m_waylandState.syncTimeline) {
         buffer->m_waylandState.syncTimeline = makeShared<CCWpLinuxDrmSyncobjTimelineV1>(g_waylandPlatform->m_waylandState.syncobj->sendImportTimeline(sync->m_syncobjFD.get()));
@@ -148,6 +153,11 @@ void IWaylandWindow::submitExplicit(SP<CWaylandBuffer> buffer) {
     auto sync = g_renderer->exportSync(buffer->m_buffer.lock());
 
     sync->m_releasePoint = sync->m_acquirePoint + 1;
+
+    if (!sync) {
+        g_logger->log(HT_LOG_ERROR, "wayland: failed to export sync timeline in submitExplicit");
+        return;
+    }
 
     TRACE(g_logger->log(HT_LOG_TRACE, "wayland: Submitting points acq: {}, rel: {} for ES", sync->m_acquirePoint, sync->m_releasePoint));
 
@@ -168,12 +178,13 @@ void IWaylandWindow::render() {
     auto currentBuffer    = m_waylandState.wlBuffers[m_waylandState.bufIdx];
     m_waylandState.bufIdx = (m_waylandState.bufIdx + 1) % 2;
 
+    // clear needsFrame BEFORE onPreRender, so any events during rendering will set it again
+    m_needsFrame = false;
+
     onPreRender();
 
     if (!currentBuffer)
         return;
-
-    m_needsFrame = false;
 
     g_renderer->beginRendering(m_self.lock(), currentBuffer->m_buffer.lock());
 
@@ -205,6 +216,7 @@ void IWaylandWindow::render() {
         m_lastFrame = std::chrono::steady_clock::now();
     }
 
+    // check if we need another frame (either set during rendering or needed for animations)
     m_needsFrame = m_needsFrame || g_animationManager->shouldTickForNext();
 }
 
@@ -224,11 +236,11 @@ float IWaylandWindow::scale() {
 }
 
 void IWaylandWindow::setCursor(ePointerShape shape) {
-    g_waylandPlatform->setCursor(shape);
+    g_backendServices->cursor->setShape(0, shape);
 }
 
 SP<IWindow> IWaylandWindow::openPopup(const SWindowCreationData& data) {
-    auto x    = makeShared<CWaylandPopup>(data, reinterpretPointerCast<CWaylandWindow>(m_self.lock()));
+    auto x    = makeShared<CWaylandPopup>(data, reinterpretPointerCast<IWaylandWindow>(m_self.lock()));
     x->m_self = x;
     m_popups.emplace_back(x);
     return x;
@@ -266,22 +278,14 @@ void IWaylandWindow::mouseAxis(const Input::eAxisAxis axis, float delta) {
 }
 
 void IWaylandWindow::setIMTo(const Hyprutils::Math::CBox& box, const std::string& str, size_t cursor) {
-    if (!g_waylandPlatform->m_waylandState.imState.enabled) {
-        g_waylandPlatform->m_waylandState.textInput->sendEnable();
-        g_waylandPlatform->m_waylandState.imState.enabled = true;
-    }
-    g_waylandPlatform->m_waylandState.textInput->sendSetCursorRectangle(box.x, box.y, box.w, box.h);
-    g_waylandPlatform->m_waylandState.textInput->sendCommit();
+    g_backendServices->textInput->activate(0, box, str, cursor);
 
     m_currentInput       = str;
     m_currentInputCursor = cursor;
 }
 
 void IWaylandWindow::resetIM() {
-    if (g_waylandPlatform->m_waylandState.imState.enabled) {
-        g_waylandPlatform->m_waylandState.textInput->sendDisable();
-        g_waylandPlatform->m_waylandState.imState.enabled = false;
-    }
+    g_backendServices->textInput->deactivate(0);
 
     m_currentInput       = "";
     m_currentInputCursor = 0;
