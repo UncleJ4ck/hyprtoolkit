@@ -48,6 +48,9 @@ static std::vector<std::string> getXDGIconThemeDirsFromEnv() {
         dir.append("/icons");
     }
 
+    // pre-xdg location, the icon theme spec still looks here first
+    dirs.insert(dirs.begin(), "~/.icons");
+
     return dirs;
 }
 
